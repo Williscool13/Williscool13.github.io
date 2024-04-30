@@ -1,2 +1,6 @@
 theme: jekyll-theme-minimal
 title: Will's Website
+
+# Add a custom navigation link
+navbar_links:
+  Journal: /journal.md.html
