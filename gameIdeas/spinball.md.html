@@ -1,0 +1,205 @@
+**_[SPin-Ball](../index.html)_**
+**Game Design Document**
+William Gunawan, https://williscool13.github.io/
+Last Updated 2024/05/01
+
+Overview
+===================================================================
+
+
+Title:
+:  SPin-Ball
+
+Tag Line:
+:  “Roll your great escape”
+
+Platform:
+:  Web and Windows
+
+Target Audience:
+:  Ages 12-30
+
+Plays Like:
+:  Pinball meets Ballance
+
+Goal:
+:  Escape the pinball machine
+
+Key Mechanics:
+:  Puzzle Solving, Timing, Accuracy, Discovery
+
+Setting:
+:  A pinball machine in an arcade
+
+Art Style:
+:  Toon Shading
+
+Audio Style:
+:  Arcadey during pinball, somber otherwise
+
+
+
+
+Art Style
+===================================================================
+In the 3d engine of choice (Unity), we will use URP, and apply toon shading using shaders (shader graph). 
+Effects and other art sources will use asset store sources. The game’s overall art requirement is low due to using balls as the hero character which require minimal work. 
+
+![](../images/games/spinball/wood.png)
+
+Balls will be required to have wear and tear to emphasize the fact that they have been in the machine for some time. A simple mask blend can work well here.
+The pinball machine, both interior and exterion will require the most amount of work, but will be handled at a later date if the game is significantly fun enough. 
+The pinball machine will have multiple flippers (see [Twilight Zone](https://www.ipdb.org/machine.cgi?id=2684)) to make better use of the large screen size. 
+
+![](../images/games/spinball/metal.jpg)
+
+Toon shading places significant limitations on color gradients due to aesthetic requirements, so a more colorful bright colored palette can be adopted, incorporating many more colors into the style. 
+Thick outlines can be particularly distracting in the dense pinball settings, so they must remain thin. Though the ball may independently exhibit an always-on-top outline to help the player track it.
+After exiting the bottom of the machine to enter the “SpinBall” part of the game, the setting will mostly be in an enclosed space. Particularly the “insides” of the machine. 
+
+There are several balls in this game, and each have a unique property to them, required for the completion of the SpinBall portion of the game.
+The primary color in the inner area will be metallic gray, as it is the interior of the pinball machine. 
+However, some flavor can be injected here if time allows: A bar for the balls to gather and to discuss their horrible lives. Trapped in a cycle of perpetual violence.
+
+There will be a mild hum and faint noises of other arcade games and patrons. 
+
+
+Background Research
+===================================================================
+Pinball
+-------------------------------------------------------------------
+![](../images/games/spinball/pinball.jpg)
+
+Pinball machines have a long history. But there are several common features between them.
+Firstly, each machine is tilted about 6.5 degrees. 
+### Key Features
+Ball Lock
+:	Balls go into collection and the game continues with a different ball. 
+	The “multi-ball” feature begins when the player has either locked a required number of balls or triggered multi-ball elsewhere.
+	Multiball ends when all except one ball is lost.
+Jackpot
+:	Some targets on the field increase the scoring value of others. 
+	Usually jackpots are hard to obtain: hitting a ramp, complicated sequence.
+	Typically the main goal of most pinball machines.
+End-of-Ball Bonus
+:	At the end of the game, the player is awarded additional point based on the number of activations, 
+	such as triggering features or picking up items. 
+Extra Ball
+:	If earned, when ball is lost, player is directed to immediately play again. 
+	Sometimes score bonuses and field settings are unmodified.
+Kickback
+: 	If ball goes to outlane (lanes behind the flippers), 
+	if kickback has been earned, consume the kickback chage to launch back into play.
+Timed Modes
+: 	Trigger a certain feature a fixed number of times within a set time interval. 
+	Progression is frequently accompanied by animations and sound.
+Wizard Mode
+:	Special scoring mode, akin to the final boss fight in video games. 
+	There are 2 main varieties:
+	 
+	 - Goal Oriented -- Achieved by executing specific tasks
+	 - Multi-Ball Mode -- 4-6 balls in play with virtually all featres active.
+Ball Saver
+:	After a quick loss (before a certain point threshold),
+	the ball is sent back out for free.
+Slam Tilt
+:	Anti tamper mechanism that locks the game if the machine is found to be tilted. 
+	While tilting is a fairly common game technique, excessive tilting results in a lockout.
+Free Credit
+:	An additional ball is awarded if:
+
+	 - A certain score is exceeded.
+	 - Hard to reach features are triggered.
+	 - A specific digit is matched on the final score, usually the 1s digit (or 10s if score is inflated).
+	 - Beat the existing high score.
+
+
+### Common terminology
+Flippers
+:	The little paddles that the player flips. Player interaction is primarily done through the flippers. 
+	Roughly 7cm in length, used to redirect ball upwards. Some games can have 3 or 4.
+Bumpers
+:	Round knobs that launch the ball away when hit. Usually 3, sometimes more. 
+	Iconic and fun to watch go crazy when hit by the ball.
+Kickers/Slingshots
+:	Walls that propel ball away on impact, usually near the bottom, above the flippers. 
+	But also sometimes present elsewhere
+Targets
+:	Targets for the ball to hit with different types:
+
+	 - Stationary targets that record when a ball strikes. 
+	 - Bullseye targets are similar to stationary targets, but have 2 parts. An outer region worth fewer points, and an inner region.
+	 - Drop targets drop (deactivate/recede) when hit. If the entire row is dropped, other features may be unlocked or bonus points awarded. Then may then reset/pop back up.
+	 - Kick targets launches balls away when hit (Like a bumper).
+	 - Vari Targets rewards different amount points based on how hard it was hit. Physically implemented with a metal arm that pivots under the field.
+	 - Holes temporarily consumes the ball and spits it out in another different hole. Alternatively, it can award bonuses.
+	 - Spinners are flat flippable surfaces that spins and gives points per spin.
+	 - Rollovers are activated when a ball moves over them. Often multiple are arranged adjacent to each other, acting as specific (or group) targets for other objectives.
+	 - Whirlwinds momentarily grabs ball and shoots out in random direction.
+	 - Switches are a one-way path which close after the ball has gone through it once.
+	 - Gates are one-way paths.
+	 - Stoppers are a temporary drain blocker that prevents losses.
+	 - Ramps are inclined planes that the ball can travel along. The player's goal is to go through the entire ramp with enough force to go to other side. Games are designed to make it easy to shoot back in after exit. In some games, these ramps lead to mini-play areas.
+
+Ballance
+-------------------------------------------------------------------
+As for ballance mechanics, [I need to replay the game lol]
+
+Mechanics
+===================================================================
+Pinball Game
+-------------------------------------------------------------------
+At each pinball machine, the player starts by playing a game of pinball with a limited number of flipper swings. 
+The player is presented with a path/route that they need to complete to escape the pinball machine.
+### Puzzle Solving
+Each pinball machine is equipped with several ball types (in this alternative universe, the balls in pinball machines are not exclusively metallic). 
+To be able to access these other balls, the player must trigger jackpots and other hard-to-achieve actions. 
+Executing these actions typically changes the player’s ball to alternative balls with different features. 
+Though the ball can potentially have a “cast off” style animation (not unlike the one seen in Ballance.
+
+#### Ball Property Hazards
+Different balls have different properties that allow them to complete otherwise uncomplete-able tasks. 
+For example, the metallic ball is heavy and slow to move. It is unaffected by light winds from the pinball’s exhausts, allowing you to move through certain portions. 
+
+Additionally, in the SpinBall section there are other “dead” balls that don’t move, but can otherwise be moved by the player by rolling into them. 
+Use this to push other metal balls to block winds for you to pass through as a lighter ball. 
+Or to activate pressure plates which enables moving platforms/opening gates.
+Or even to stick into holes to allow progression.
+
+Other hazards also include underwater segments (flooded, which will harden and rust any metallic balls). Some hazards need to be cut open by knives, which one particular ball does: The knife ball. This ball has a retractable knife that can be used by the ball to launch forward (if knife will extend into ground) or extended to cut through a specific material (it is very sharp). Another ball is sticky and will stick to a specific material. Upon sticking, the ball will be stuck, stick enough balls and eventually the amalgamation will be heavy enough to crash through a glass floor and exit the machine. 
+
+#### Timing Hazards
+Hazards that require timing, whether it be moving through a swinging axe, temporary wind funnel, or an electric hazard(that make wooden balls catch fire). 
+
+#### Moving in the dark
+Some machines also have dark spots in the machinery that make it impossible to see farther than a few units of distance at a time, 
+requiring the player to memorize the layout (have the light duration be dependent on time/points gained in pinball game)
+ 
+### Controls
+In the pinball portion of the game, the ball is controlled as you may typically expect, through hitting it with the flippers below (in certain machines with additional flippers). 
+When in the machines insides, the ball is controlled with WASD/Arrow Keys/Controller and rolls around with the camera following it. 
+The ball can otherwise not be controlled in any other way. The rolling of the ball is purely physically based.
+
+In Twilight zone, a mini self-contained pinball zone called the “power field” where you control 2 magnets using your flipper controls. 
+The flippers act like bumpers and shoot the ball away if the ball is in contact with the surface when pressed.
+With the goal of pushing the ball back up top. Because the new “flippers” don’t move, the ball is much more likely to fall down the exit hole.
+
+![](../images/games/spinball/twilightZone.png)
+
+### Easter Eggs
+Throughout the internal pinball machinery you may find secret collectibles which are just mini-posters of existing pinball games which can be ripped from the pinball database.
+Collect them all to go through pinball history. Preview them in the pause menu.
+
+### Additional Notes
+In some pinball games, different balls generate different amount of points. 
+So the player may want to save big triggers for high value balls. 
+
+In Twilight Zone, the “white ball” moves faster than the usual ball (and as a result is harder to control). It is released from the gumball machine by shooting 3 normal balls into it. 
+The goal is to return the white ball back into the gumball machine. This starts a “gumball mania” a multi-ball scenario where you need to guide the 3 balls into the right ramp 
+
+States
+===================================================================
+
+
+<style>em.asterisk { font-style: normal; font-weight: bold; }</style>
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js"></script>
