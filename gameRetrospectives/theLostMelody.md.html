@@ -1,0 +1,207 @@
+**[The Lost Melody](https://williscool13.itch.io/the-lost-melody-autumn-tavern-jam)**
+	Written on 2024/05/01
+	Game Publish Date 2023/09/25
+
+The Lost Melody would be my first published game, produced for a small game jam called the Tavern Game Jam Autumn 2023. 
+In this game jam, I had also worked with a small team of 5 members, where I was both the group lead and sole programmer. 
+The team consisted of 2 artists, both specializing in 2d pixel art; 1 composer, formally trained in classical composition; and 1 level designer. 
+I was personally friends with the level designer and we both worked together to create the 5 levels present in the game.
+
+![The First Level](tlm/tlm3.jpg)![The Second Level](tlm/tlm2.jpg)![The Final Level](tlm/tlm1.jpg)
+
+# The 3 Cs
+
+## Controls
+As is tradition, this game was a 2d pixel-art platformer. A common choice for many first games. 
+But 2d platformers have the potential to be fairly complicated, especially with regards to the character controller. 
+An unresponsive and sluggish character controller can frequently turn players away before they have even given the level design a chance.
+
+I had decided to model the controller to common platformer mechanics. Including double jump, dash, and wall clutch. 
+A particular notable influence was [Hollow Knight](https://store.steampowered.com/app/367520/Hollow_Knight/). 
+I had recently finished Hollow Knight and was enchanted by its responsive intuitive controls.
+
+Getting the character controller to be in a comfortable state is a trial that took longer than I'd hoped. And even after finishing, did not come out in a state that I was happy with. 
+But given the time constraint, had to be left as it was so we could move on to actually creating the levels. 
+After all, you can't create a level, if you haven't defined the player's control system.
+
+
+## Character
+We knew that we wanted to game to feature a story to immerse the player into being their character.
+We had decided that the character would be a musical spirit who had lost their voice. Causing the creatures in the realm to be restless and lost.
+
+This is emphasized in the gameplay through the character's ability progression.
+The player begins the game with no abilities - only the standard walk and jump. Gaining a new ability after rescuing another creature.
+Additionally, as the player gained more abilities and restored more balance, another tarck of music would be enabled. 
+With the soundtrack becoming more rich and full after every level. Our composer was very responsive and open to this idea.
+The game would finish with the player ascending both literally and metaphorically, 
+regaining their lost music, returning peace and joy to the creatures in this realm, continuing on their journey to return music to all realms.
+
+![The Musical Spirit](tlm/tlmchar.png)
+
+## Camera
+Unfortunately due to time constraints and limited experience at the time working with cameras, the camera was left to be a basic hard-follow of the character sprite.
+No limitations were placed to prevent it from peeking behind inaccessible areas, but that was subsequently handled through level design and careful "death-zone" placements.
+
+Not to promote poor code, but this was the extent of our camera system. I had only discovered the magic of cinemachine a few weeks later. 
+```
+ Vector3 targetPos = player.position;
+ targetPos.z = -10;
+ // a hard coded offset
+ targetPos.y += 1.3f;
+ targetPos.x += 2.2f;
+ transform.position = targetPos;
+ 
+ int mementoIndex = 0;
+ foreach (bool b in GameDataManager.Instance.PlayerAbilityData.abilities) {
+	 if (b) {
+		 mementoIndex += 1;
+	 }
+ }
+ // god mode makes you jump really high
+ // so we needed to increase the camera's size
+ if (mementoIndex > 4) {
+	 cam.orthographicSize = 9.5f;
+ }
+```
+
+More criticisms of the code can be found in Section [Programming].
+
+# Level design
+The game is divided into 6 levels: 
+ - Forest (Me)
+ - Mountain1 (Me)
+ - Attic (Both)
+ - Mountain 2 (Me)
+ - Lake (Me)
+ - Clouds (Both)
+
+The abilities the player received would be obtained in this order:
+	
+	<div style="text-align:center;">**Wall Cling -> Dash -> Double Jump -> Water Walking -> God Mode**</div>
+
+(##) _Progression_
+
+Each level was designed to be as non-repetitive as possible. Allowing the player to experience all the abilities have to offer.
+Additionally, the levels are designed to have progression. 
+With earlier parts acting as simple demonstrations of what their new abilities do, and later parts a full demonstration of the potential tricks you can do with them.
+
+For example, wall clinging allows you to cross large gaps, as when you jump off a wall, your jump distance is significantly higher than usual. 
+Wall clinging resets the number of times you can jump/dash, which you can use to cross extreme gaps found in the later parts of the double jump level.
+While we don't always follow it to the letter, we tried to follow the 3-step rule.
+	<div style="text-align:center;">**Introduction -> Mastery -> Surprise**</div>
+
+Creating the levels took a significant amount of time, with each level iterated on several times. 
+It has been a while, so I don't have access to any of the scratch notes used to ideate the levels.
+However, I can say that many of the "sub-sections" were not used, as they were too repetitive. 
+We didn't want the game to be too long, and didn't want to waste the player's time; or worse, bore them.
+
+(##) _Developer Blinders_
+
+The hardest level in the game is Attic. It featured a significant number of hazards: **Spikes**.
+These spikes would instantly kill the player, though that blow would be softened by the numerous checkpoints we dotted around the maps.
+I confess that this was my fault. It bring me some amount joy watching players suffer through my levels because of the pinpoint accuracy required to complete them.
+The difficulty delta between the developer experience and the player experience would be a recurring phenomenon in many of my games. And even in many other games you find online.
+Due to the frequent playtesting of their own games, developers can complete a difficult task trivially due to extreme repitition.
+
+![**Spikes!**](tlm/spikestlm.png)
+
+(##) _Linearity_
+
+The game is fairly linear, with almost all of the levels having a straight path to victory. 
+This made it easier to both create the levels and guide the player strategically. 
+This is showcased in the player's path to the levels. You frequently pass by "teleport gates" which are un-reachable unless you have the appropriate ability.
+When the player unlocks new abilities, they have an educated guess on where their new ability can be used. 
+It is fairly difficult to lose your way in this game because of the tricks we've implemented.
+
+![Currently Unreachable Areas](tlm/unreachabletlm.png)
+
+(##) Platform mechanics
+
+Some mechanics were thoroughly implemented but were not used as often as I would have liked. 
+For intance, extremely fast moving platforms which would not fling players away.
+And another that I'm particularly proud of: The ability to clutch onto a wall that is moving and stay on it cleanly. There were edge cases where this would fail, but it was quite a sight to behold.
+Both of these techniques were implemented sparsely.
+
+But they were available for use and allowed us to create creative scenarios for the player to explore.
+Of course, we still always followed the rule of progressive difficulty, only introducing them in mid to later stages of the levels.
+
+
+
+# Programming
+Games always appear less complex upon glancing than under the hood. There are several features that may be taken for granted but had to be considered to make the game enjoyable.
+Minor but important features such as checkpoints, a dialogue system to communicate with the player, smooth transitions, and audio consistency. 
+
+(##) It was all a mess
+
+I was the only developer in the group. Which means the task of coding, implementing, and adjusting were all left to me. The other members could playtest and feedback, 
+but the task of iterating ultimately rest upon my shoulders. With the exception of level design, where I had help from my friend. 
+
+Given how much I had to do and how little time we had, the code fell apart and became extremely coupled very quickly. 
+
+ - Encapsulation was ignored in favor of rapid iteration.
+ - Singletons were used liberally, creating dependency issues everywhere. 
+ - Any changes in one part of the code had potential to break other unrelated code.
+ - Code was repeated multiple times
+
+The deterioration of code quality sharply rose near the end of the project. As a matter of fact, we had only uploaded our final build an hour or so before the deadline.
+Timing was tight, but we put forward a finished product that the team was proud of accomplishing.
+
+(##) Singletons
+
+At this point in my developer journey, I was still frequently using Singletons in places where they were not necessary. 
+```
+// Game Data
+public static GameDataManager Instance { get; private set; }
+// Player Character
+public static PlayerPlatformSystem Instance;
+// Music System
+public static AudioSystem Instance { get; private set; }
+```
+
+The player character was greatly coupled with the scenes. It was not possible to run scenes without a player character present. 
+Audio systems would need to exist in every scene to prevent null reference errors from scene managers.
+
+These systems do not need to be Singletons, and needed better decoupling from the other game sytstems.
+For example, Game Data would be better implemented as a collection of scriptable objects, allowing any class to access it as necessary and exposing the field for viewing at any time.
+You may have seen the wonderful talk in [Unite 2017 by Schell Games](https://www.youtube.com/watch?v=raQ3iHhE_Kk). If you haven't it is a good watch and can affect your architecture greatly.
+
+
+
+# Limitations
+(##) Scope Creep
+
+Unsurprisingly, as a first game jam game, the scope that we had set for the project was too large. 
+There was no feasible way we would complete what we had initially planned within the time limit of 1 week.
+What was once a lush graveyard turned into a precariously hanging platform. 
+The grand idea we had for an underwater level was reduced to a joke walking-on-water level. 
+
+(##) Unanticipated Delays
+
+In what was a devastating scenario, both our artists were heavily occupied throughout the week. Forcing us to use some placeholder assets in the final build of the game.
+It is not anyone's fault, life happens and a game jam is not that important. But it meant that we were crunched significantly for time near the end. Hence, the deterioration of good code practices.
+Some animations needed reworking, tilemaps needed to be configuered and set up to look consistent. It was a hectic final few days to say the least.
+
+Something I didn't know at the time was that 2d games require a signficant amount of work from the artists. Almost everything in the game needs to be meticulously hand animated. 
+This left other team members with very little to do while waiting. 
+
+(##) Inconsistencies
+
+The time crunch also made several components of the game inconsistent. 
+The art style of our artists were not particularly consistent, leading to jarring shifts in art style, pixel density, and color palettes in multiple sprites.
+
+Inconsistencies are not limited to art style. Some levels were significantly harder than others, requiring a different skillset than we had envisioned for the game.
+We did not set out to make a precision platformer, but some levels required accurate movements and controls from the player. 
+If we had more time to iterate on the game, we may have potentially scrapped entire levels for a more cohesive experience.
+
+# Strengths
+(##) Music
+
+The composer we had for this project was extraordinary. She knew exactly what had to be done, knew the technicalities of production, and was very open to ideas from the whole group.
+She was pursuing a master degree in music in the UK, I wonder if that's all been done by now.
+
+(##) Level design
+
+I think the levels we made were good. It's hard to be innovative in the fairly saturated space of 2d platformers, but we did our best and put out levels that were interesting, challenged the player,
+and were fun!
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
