@@ -23,7 +23,7 @@ I had recently finished Hollow Knight and was enchanted by its responsive intuit
 
 Getting the character controller to be in a comfortable state is a trial that took longer than I'd hoped. And even after finishing, did not come out in a state that I was happy with. 
 But given the time constraint, had to be left as it was so we could move on to actually creating the levels. 
-After all, you can't create a level, if you haven't defined the player's control system.
+After all, a level can't be created, if the player's control system has not been defined.
 
 
 ## Character
@@ -58,7 +58,7 @@ Not to promote poor code, but this was the extent of our camera system. I had on
 		 mementoIndex += 1;
 	 }
  }
- // god mode makes you jump really high
+ // god mode significantly increases jump height
  // so we needed to increase the camera's size
  if (mementoIndex > 4) {
 	 cam.orthographicSize = 9.5f;
@@ -84,10 +84,10 @@ The abilities the player received would be obtained in this order:
 
 Each level was designed to be as non-repetitive as possible. Allowing the player to experience all the abilities have to offer.
 Additionally, the levels are designed to have progression. 
-With earlier parts acting as simple demonstrations of what their new abilities do, and later parts a full demonstration of the potential tricks you can do with them.
+With earlier parts acting as simple demonstrations of what their new abilities do, and later parts a full demonstration of the potential tricks they enable.
 
-For example, wall clinging allows you to cross large gaps, as when you jump off a wall, your jump distance is significantly higher than usual. 
-Wall clinging resets the number of times you can jump/dash, which you can use to cross extreme gaps found in the later parts of the double jump level.
+For example, wall clinging allows the player to cross large gaps, as when the player jumps off a wall, their jump distance is significantly higher than usual. 
+Wall clinging resets the number of times the player can jump/dash, which they can use to cross extreme gaps found in the later parts of the double jump level.
 While we don't always follow it to the letter, we tried to follow the 3-step rule.
 	<div style="text-align:center;">**Introduction -> Mastery -> Surprise**</div>
 
@@ -101,7 +101,7 @@ We didn't want the game to be too long, and didn't want to waste the player's ti
 The hardest level in the game is Attic. It featured a significant number of hazards: **Spikes**.
 These spikes would instantly kill the player, though that blow would be softened by the numerous checkpoints we dotted around the maps.
 I confess that this was my fault. It bring me some amount joy watching players suffer through my levels because of the pinpoint accuracy required to complete them.
-The difficulty delta between the developer experience and the player experience would be a recurring phenomenon in many of my games. And even in many other games you find online.
+The difficulty delta between the developer experience and the player experience would be a recurring phenomenon in many of my games. And even in many other games online.
 Due to the frequent playtesting of their own games, developers can complete a difficult task trivially due to extreme repitition.
 
 ![**Spikes!**](tlm/spikestlm.png)
@@ -110,9 +110,9 @@ Due to the frequent playtesting of their own games, developers can complete a di
 
 The game is fairly linear, with almost all of the levels having a straight path to victory. 
 This made it easier to both create the levels and guide the player strategically. 
-This is showcased in the player's path to the levels. You frequently pass by "teleport gates" which are un-reachable unless you have the appropriate ability.
+This is showcased in the player's path to the levels. The palyer frequently pass by "teleport gates" which are un-reachable unless they have the appropriate ability.
 When the player unlocks new abilities, they have an educated guess on where their new ability can be used. 
-It is fairly difficult to lose your way in this game because of the tricks we've implemented.
+It is fairly difficult to lose their way in this game because of the tricks we've implemented.
 
 ![Currently Unreachable Areas](tlm/unreachabletlm.png)
 
@@ -164,7 +164,7 @@ Audio systems would need to exist in every scene to prevent null reference error
 
 These systems do not need to be Singletons, and needed better decoupling from the other game sytstems.
 For example, Game Data would be better implemented as a collection of scriptable objects, allowing any class to access it as necessary and exposing the field for viewing at any time.
-You may have seen the wonderful talk in [Unite 2017 by Schell Games](https://www.youtube.com/watch?v=raQ3iHhE_Kk). If you haven't it is a good watch and can affect your architecture greatly.
+This style of architecture is outlined in a talk in [Unite 2017 by Schell Games](https://www.youtube.com/watch?v=raQ3iHhE_Kk). 
 
 
 
