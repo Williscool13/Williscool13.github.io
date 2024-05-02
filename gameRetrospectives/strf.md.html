@@ -1,0 +1,237 @@
+**[STRF](https://williscool13.github.io/)**
+	**[Game Link](https://williscool13.itch.io/strf)**&nbsp;&nbsp;&nbsp;&nbsp;**[Source Code](https://github.com/Williscool13/STRF)**
+	Written on 2024/05/02
+	Game Publish Date 2023/12/17
+	Game Modified 2024/01/03
+
+STRF is the largest project I have published to date. It involves a large team, multiple developers, and voice acting. 
+The team consisted of 1 composer, 1 3d artist, 1 voice actor, and 1 level designer. 
+All members of the team were entirely anonymous and were found through participation of GDN Big Festive Game Jam 2024.
+
+# The 3 Cs
+## Character
+STRF is a first person shooter, where the player is a lone operative, sent to infiltrate an enemy supply base. Acting as a part of a larger
+rebel organization, the player's mission is to find and defeat the commander of the empire, who has made the supply base his base of operations.
+
+The player and enemy characters were modeled by our artist and fit the theme of an imperial space war quite well.
+Unfortunately due to other commitments, our artist could not commit very much time to the project. The characters would be the only few artist handled models in the game.
+
+![Wireframes during development](strf/charstrf.png)
+
+Other models, such as the barrels, balls, and gun were either created through probuilder primitives or were free assets from [kenney.nl](https://kenney.nl).
+
+## Controls
+
+The game plays as a fairly standard first person shooter. The player is limited to 1 weapon, which they can use to shoot themselves (bounce of walls) and climb walls. They can reload and jump, but are unable to crouch.
+
+There are quirks in the movement and controls as this game builds upon my third person controller system I had been developing at the time (before the project had started). 
+Most notably, the first person weapon view has its pivot at the wrong position and does not look appropriate when looking directly up or down.
+
+## Camera
+
+The game featured a few different camera styles:
+
+ - First Person
+ - Orbital Establishing
+ - Static
+ - Dolly Controlled Establishing (Dev Only)
+
+The one used was primarily the first person perspective, but the other camera techniques would help in establishing the game's story and scale.
+For example, in the encounter with the final boss: there is a brief sequence where the size difference between the final boss and the player character was emphasized using an orbital shot.
+
+Dolly controlled cameras were used to preview the game levels. This style of camera can be seen in the initial briefing video before the game's first level begins.
+The dolly cameras were also additionally used to share the level layout with other group members throughout development.
+
+![Static Camera for Briefing](strf/staticstrf.png)
+
+# Level Design
+
+There are 5 unique levels in this game, each with their own unique mechanic requiring the player to solve puzzles involving them.
+The levels and their respective mechanics are:
+
+ - **Hangar** -- Physics/Friendly Fire
+ - **Energy Storage** -- Vacuum Barrels
+ - **Archives** -- Grow
+ - **Airlock/Outside** -- Shrink (and some Grow)
+ - **Control Room** -- Final Boss
+
+My level designer partner had worked on the initial version of the first 2 levels: The Hangar and Hallway. 
+I had worked on the finalization of these levels and every other level. This includes textures, enemy placement, and lighting; 
+
+The levels were also designed to tell a story, One of the player character adventuring deeper into the facility. 
+Each level also had a unique theme, as described by their names and elaborated on through the use of specific mechanics. 
+
+For instance, in the archives, guns that cause collided objects to grow can be found. 
+This is because objects and weapons in this room are shrunken to minimize storage costs. 
+When the objects are required for use, they are grown back to an appropriate size and sent out.
+
+## Progression
+
+The game's first level is the hangar. It is meant to be a brief introduction to the basic rules of an FPS: Shoot, Move, and Progress.
+Thematically, the first level is the player's way of entering the enemy base: by being smuggled in a shipping container full of crates of weapons. 
+
+The structure of this game is set to introduce players to simpler mechanics early on and become increasingly complex as the game continues. 
+We try our best to accomodate both new and returning FPS players when designing our progression.
+
+The first level showcases the foundation of an fps in a 3d engine: FPS controls, physics interactions, and the ability of the player to shoot themselves.
+The levels were also filled with voice lines from the Big Bad Evil Guy -- Glorbon, with his tone becoming more aggravated as the player gets farther into the base.
+
+![The Hangar](strf/fpstrf.png)
+
+As the game progresses, the player is faced with many new mechanics: vacuum barrels, growing, and shrinking. 
+With the penultimate level requiring the player to have mastery of all mechanics to solve. 
+
+At every level, an emphasis was placed on where to go. At certain segments, it may not be entirely clear where the player is supposed to go. 
+Particularly when the player is introduced to new mechanics. For instance, without knowing that the shrinker reduces the player's size, the player may not know to go through a small crawlspace.
+To mitigate this, parts of the level which could potentially be confusing had the appropriate path colored green.
+
+![Green Border on Crawlspace](strf/shrinkintro.png)
+
+
+## From Scratch Notes to Scenes
+
+Throughout development, I had worked closely with my level design partner to ideate potential puzzles for the player to solve.
+The theme imposed by the game jam was "Unintended Effect" and we wanted to explore that idea through level design.
+
+For example, we wanted the player to be surprised by the effect of barrels. In video games, red barrels are commonly associated
+with explosive tendencies. When the player shoots the barrel, they would expect to destroy their enemies with fire, but instead are met with the 
+unintended effect of vacuuming the enemy and themselves off into the pit. 
+
+![Red Barrels imploding rather than exploding](strf/barrelstrf.png)
+![How that looked in-game](strf/scrtoscestrf.png)
+
+We created puzzles and self-contained segments together, incorporating many of the mechanics individually.
+After brainstorming sessions, we would each work on our individual levels, selecting ideas we felt were appropriate.
+
+![Segments with multiple mechanics](strf/shrinklevel.png)
+
+Not all of the independent segments would be included, of course. Some ideas simply did not fit in the progression structure of our game.
+Certain segments were selected to be included in the finalized version of the levels.
+
+For example, the idea to the bottom left of the image above was deemed to complicated and involved too many potential frustrations from the player
+and was ultimately scrapped. 
+
+
+The circled segment labeled with the number 3 was one of the larger levels in the game. 
+Designed to be a slightly extravagant display of neon, the emphasis of the segment was on cross-fire and using it to your advantage.
+
+![Segment Labeled 3](strf/shrinkbig.png)
+
+The concept was for the player to take advantage of the reduced effect of vacuum barrels on large units. 
+The player would accumulate a larger size from the walled off enlargers, and proceed to the next area and cause crossfire between the shrinkers.
+The smaller shrinkers would then be better affected by the barrels, allowing the player to rapidly dispatch the enemies on the platform, enabling the path to the next area. 
+The finalized version would match the sketch version fairly closely, but required a significant amounmt of space to make appropriate use of the vacuum barrels.
+
+Note that robots colored blue are unable to be shot and killed, and require other techinques to dispatch.
+
+![Grow Level Blueprint](strf/growlevelstrf.png)
+
+The blueprint above is a finalized blueprint of the grow level. The level would go through more direct iteration in the editor by using probuilder.
+Pictured below is the stage after crossing the bridge, where the player would have to direct the sentry to indirectly fire at the crate to get to the next area.
+In the blueprint, there are shrinkbots pictured, but they are not actually present in the level. Instead, the level was set to be only growers to reduce the level's complexity.
+
+![Note the green walls, signalling the correct path](strf/growexample.png)
+
+Even with the amount of level design I did, the time constraints made it difficult to iterate frequently.
+As the sole programmer in the group, I had to manage each component of the game and facilitate the integration of multiple systems.
+Fortunately, our composer also had experience working with FMOD (our audio middleware of choice). This reduced the amount of work I had to do with respect to audio; I only had to design tools to 
+assist the composer in creating the system they desired.
+
+![Grow Scene Grey Box (Almost Final)](strf/growGreybox.mp4)
+![Shrink Scene Grey Box (Almost Final)](strf/shrinkGreybox.mp4)
+
+
+# Programming
+(##) So Many Systems
+
+The game was a significant undertaking. Particularly so because I was the only programmer, and we only had 1 week to finish it. 
+While it may not seem like so, there are a fair amount of systems in the game. Each requiring attention and care.
+
+For example, because our artist was heavily occupied, the work of shaders and lighting was left to me. It wasn't all terrible; I enjoy graphics programming
+and this was a fun way to learn what I needed to know in a trial by fire.
+
+Designing levels takes time, and testing the levels to be consistent and bug-free is a time consuming process. Though I had help from my level design partner,
+there simply was not enougb time to communicate and resolve some issues. Especially since we were working at significantly different time zones.
+
+Some parts of the game required artwork, but we did not have an artist onboard for most of the project. As a result, some placeholder assets were used in the final product.
+The most obvioius one being the sentries present in the grow level and onward.
+
+![Probuilder Primitive Sentry Surrounded by a Forcefield](strf/sentry.png)
+
+(##) Optimizing
+
+It was frustrating to add features to the game because we had decided that we would like to target web as a platform. WebGL builds are significantly less
+powerful than native builds, which left us little room for graphically intensive effects. Lighting needed to be entirely baked, shaders needed to have minimal effects, and enemy count could not be too high.
+
+One particular optimization that had to be done was a primitive form of occlusion culling, with a trigger-based system to re-enable gameobjects when the player is close enough. In certain areas this would
+not be seamless and objects can pop-in. 
+
+Even with all the optimization attempts, the game still had to be shipped on WebGL with a significantly small resolution: 768x432. The decision turned out to be appropriate, as having games on itch.io 
+be playable on the web increases the rate of engagement. There is a slight inconvenience when the players are required to download the game. Additionally, there was (and still is) a recent wave of
+scammers using the guise of indie game testing to install malware on computers.
+
+(##) Shader Work
+
+Though I didn't have much time to do shader work, I did have the opportunity to implement some shading techniques. Notably, I reused some fullscreen shaders from previous works.
+
+I had also used a new Forcefield Shader, a mostly transparent surface with increased opacity in pixels which were closer to the scene depth. 
+This could be done because transparent shaders do not write to the scene depth buffer. Forcefield shaders aren't complex, but it was a shader implementation nonetheless.
+
+![Forcefield Shader](strf/forcefield.png)
+
+(##) AI and Pathfinding
+
+This project would be my first dabble into AI behaviour and pathfinding. Fortunately Unity has a built in Navigation Mesh system which I used to more easily automate the movement of the enemies.
+
+
+(##) Multiple Developers in Editor
+
+This project would be the first project where I had a team that spent a significant time in the editor with me.
+Specifically the composer, who did work on music, sound effects, and sound tuning. We used FMOD, as he was familiar with it.
+My level designer partner also worked in the editor, but used it notably less than the composer.
+
+We used PlasticSCM, a Unity solution for version control, and we worked on 3 branches simltaneously. 
+This ensured that we could independently commit changes without creating frequent conflicts.
+
+There certainly were instances of merge conflicts, and for the most part they were fairly easy to resolve. 
+However, scene merge conflicts were particularly devastating, as scenes are serialized in a way that resolving them by hand is nigh impossible.
+Though messy, instead of working in separate compositable scenes, we decided to keep it simple and communicate what scenes we were working on at any given time.
+
+
+# Game Packaging
+For this game, I would spend more time than usual on the game's packaging. When it comes to games, it is important to engage the users immediately. 
+First impressions matter; thumbnails and game page quality are as important as the game itself.
+
+ - I had a recurring acquaintance work on the thumbnail, which turned out truly amazing. 
+ - I created a walkthrough video in case people may have had difficulties on certain parts of the game.
+ - I remained active in the discord channels for this game jam.
+ - I wrote the game description with great care and listed 5 unique selling points.
+
+![Thumbnail made by CSVidal](strf/thumbstrf.png)
+
+# Voice Acting
+Though not a significant portion of the game, this game would also be my first game that includes voice acting. 
+The voice actor was a friend of my level design partner. They voice Glorbon, the main villain. 
+
+Glorbon would continuously taunt the player throughout the levels, injecting a good amount of humour.
+The dialogue also helped flesh out the game's narrative. It may be hard to make sense of the game's story through in-game objects, especially when there is not a dedicated artist 
+to hand-craft the world.
+
+![tes](dlg_scene01_03.mp3)
+
+Though we only began planning the voice acting halfway through the project, the dialogue turned out well.
+
+# Music and SFX
+
+The composer was fantastic. They created different tracks for each level, separating them based on the style of the level. For example, in the grow level, the music had a nice cadence to it 
+that felt very appropriate for a growing scene. The music at the start did a great job of exciting the player with what was to come next. All the music felt very natural and fit very well into the
+theme of the space station.
+
+The composer took control of the SFX part of the project and implemented a great deal of it. FMOD proved to be very effective at bridging audio management portion of the game, and the
+code implementation -- which I did myself. 
+
+The composer also added reverb spots all around the base to further immmerse the player in the enclosed nature of the rooms.
+
+
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
