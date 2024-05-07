@@ -1,0 +1,151 @@
+**[Santa's Eternal Christmas](https://williscool13.github.io/)**
+	**[Game Link](https://williscool13.itch.io/santas-eternal-christmas)**&nbsp;&nbsp;&nbsp;&nbsp;**[Source Code](https://github.com/Williscool13/ActionGameVerticalSlice/tree/melonjam2023branch)**
+	Written on 2024/05/03
+	Game Publish Date 2023/12/30
+
+Santa's Eternal Christmas is a solo game jam game made for the Winter MelonJam 2023 with the jam theme of **Charm**.
+It is a branch of my third person controller project (similar to [STRF](strf.md.html)), and has the player play as santa. 
+Santa is out for festive blood and sets out to eradicate all the other festivals from history.
+The game itself plays as a third person platformer/shooter, with a little dialogue from a narrator at the end of the game. 
+
+# The 3 Cs
+## Character
+The player character in this game is Santa Clause. Christmas had just passed and it was time to pass the holiday torch on to the next holiday.
+But Santa decided: Why can't it be Christmas season all year long? 
+So in the celebration village, the village where all the holiday spirits reside, santa sets out to make all the spirits feel Christmas cheer.
+
+## Controls
+The game is, for the most part, controlled like a 3d platformer: WASD, Jumping, Picking up/Throwing. 
+The player would have to take advantage of the terrain and magical wind gusts to traverse the large map.
+The player spreads cheer to other festival spirits by picking up magical presents and throwing it at the other spirits' faces.
+Doing so converts them into either one of santa's elves or a mall santa.
+
+
+## Camera
+The camera remains in a third person perspective for the entirety of the gameplay portion. 
+The camera system utilizes cinemachine's third person system. 
+When colliding with a wall, the camera will attempt to keep the player character in view; though in extreme situations, the camera still breaks down.
+
+# Level Design
+The entire game is contained within 1 large map, with 9 festival charms scattered around the area.
+There were many aspects to consider when designing the level. Among them are: 
+
+ - [Gameplay](santasEternalChristmas.md.html#gameplay)
+ - [Environment](santasEternalChristmas.md.html#environment)
+ - [Atmosphere](santasEternalChristmas.md.html#atmosphere)
+
+## Gameplay
+
+At the start of the game, the player starts in an enclosed room. Leaving this room reveals the primary objective for the player: The World.
+This large wooden door is sealed shut. The player is also immediately exposed to a large number of charms scattered around their screen (in addition to the HUD).
+
+![The First View](sec/theworld.png)
+
+
+Further investigation from the player will reveal that the 9 charms are the key to leaving this area.
+Early exposure to a myriad of avenues of investigation assists in minimizing confusion. 
+Defining a clear goal and a set of potential paths to achieve that goal assists in engaging the player.
+
+The 9 festival charms are hidden in various ways, frequently requiring some puzzle-solving from the player.
+
+For example, the halloween charm is trapped in a cage. 
+It requires the player to solve a matching puzzle with the solution revealed from environmental clues around the area.
+For this puzzle, it was important that the player understand the puzzle, rather than randomly shuffling the pieces until they find the correct sequence.
+
+![Halloween Charm](sec/hlw1.png)
+![Solution in the Environment](sec/hlw3.png)
+![Solved](sec/hlw2.png)
+
+Another example is the Christmas charm.
+This charm is located in Santa's sleigh, at the center of the map. 
+This puzzle entices exploration, incentivizing the player to seek the charm through careful observation of the layout of the level.
+
+![Through the Giant Presents, Off the House's Roof](sec/xmascharmpath.png)
+
+
+
+
+## Environment
+
+(###) **Terrain Sculpting**
+
+The map itself is sculpted using a [terrain tool](https://assetstore.unity.com/packages/tools/terrain/landscape-builder-55463). The tool is a third party package that builds upon Unity's terrain system.
+The layout of the map is a secluded valley, with tall mountains surrounding the lower playfield.
+The game is set during Christmas -- in the middle of winter. 
+Thus the map is snowy; filled with a winter atmosphere and christmas ornaments.
+
+![Tall Mountains on a Dark Night](sec/terrain.png)
+
+Trees could be easily scattered around the map, placed in groups and clustered to avoid overpopulating the map.
+The placement of the trees were dictated by the elevation of the landscape.
+With more time, the trees would have been optimized to be impostors/billboards at significant distances. In this project, they were simply 3d meshes (gameobject instances).
+
+The terrain builder simplified the process of sculpting the landscape, allowing me to focus my time on other aspects of the game.
+
+
+(###) **Verticality**
+
+An aspect of level design that I hadn't explored very much in my previous games is verticality.
+In this map, several charms are located far above the ground, encouraging the player to look at their surroundings to figure out the solution to puzzles.
+
+There are several instances of "Wind Gusts". 
+These winds shoot the player in a pre-determined direction and are primarily used to rapidly gain verticality.
+This design directly enabled me to create several charm puzzles. It involves the player chaining these wind gusts to reach a charm suspended high above.
+
+![Tall Mountains on a Dark Night](sec/windpuzzle.png)
+
+
+
+## Atmosphere
+
+The atmosphere of the game was designed to be solemn and somber. The holiday cheer is infectious and spells the doom of the other spirits.
+
+To appropriately convey this emotion, a sountrack from from [PlusMusic](https://amp.plusmusic.ai) was used. 
+Though their API was difficult to work with at times, such as poor response times, significantly large file sizes (FLAC), and complex code.
+
+(###) **Particle Effects**
+
+A fair amount of work was done on the particle effects in this project. 
+
+![Snow, Charm Items, Wing Gusts](sec/snow.png)
+
+Using a fairly basic snow particle system, consistent snowfall helped to further immerse the player into the winter atmosphere.
+This had the unintended effect of hiding the stars in the skybox, resulting in the sky appearing emptier than it would otherwise.
+
+Using a particle system pack from the asset store, I had broken down several independent particle systems. They were manipulated to create effects appropriate for the setting.
+![Charm Item Particle Effect](sec/charmPickup.gif)
+
+The effects are slightly cartoonish and colorful as this would blend better with the assets I had chosen to use.
+All art in this game was not created by me. A full credit list can be found on the itch page. Notably, the models are mostly from [Scynty](https://syntystore.com/).
+
+
+(###) **Shader Effects**
+
+A shading technique that has long interested me is the toon shader. 
+The crisp colored outlines to highlight the silhouette of objects has always stood out as remarkably efficient.
+This toon outline technique can naturally be used to emphasize the player's selection.
+
+This is only used once in this game: To highlight the object that the player is hovering over. This could only be seen on (unused) presents and the candy cane gun.
+Although seemingly minor, the effect subtly helps inform players of their interaction status in the game.
+
+![Toon Highlighted Candy Cane Gun](sec/glowgun.png)
+
+
+# Programming
+builds on third person shooter base that STRF forked 
+
+Tweening basics
+Mastery of Other Third party packages
+
+## Animation Rigging
+## Achievements
+
+
+
+
+
+
+
+
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>

@@ -158,6 +158,46 @@ The most obvioius one being the sentries present in the grow level and onward.
 
 ![Probuilder Primitive Sentry Surrounded by a Forcefield](strf/sentry.png)
 
+(##) Non-Programmer Friendly Interface
+
+Many system setups in the editor were created to be friendly for use to other developers.
+```
+namespace ScriptableObjectDependencyInjection
+{
+    [CreateAssetMenu(fileName = "FloatVariable", menuName = "ScriptableObjects/Variable/Float")]
+    public class FloatVariable : ScriptableVariable<float> { }
+
+    [Serializable]
+    public class FloatReference : ScriptableReference<FloatVariable, float> { }
+}
+```
+Above is an example of a scriptable variable and its read-only reference counterpart. The project has many instances of these that describe properties of the scene. 
+This allows the player character to modify important values such as scale, and other features such as sound and gun knockback strength can reference them without a singleton reference to the
+player character.
+
+This field is more easily accessed by other developers, has minimal coupling with the player character, and is easy to debug. Scriptable Objects are extremely useful in this regard.
+Scriptable Objects can also be used to perform a similar role when it comes to events, which is often used to activate triggers such as scene exit and start. 
+
+```
+public class DialogueEventTrigger : MonoBehaviour, ICallbackSoundEvent
+{
+    [SerializeField] bool multipleTrigger = false;
+    public event EventHandler OnSoundEvent;
+    bool triggered = false;
+    private void OnTriggerEnter(Collider other) {
+        if (triggered && !multipleTrigger) return;
+
+        if (other.gameObject.CompareTag("Player")) {
+            OnSoundEvent?.Invoke(this, EventArgs.Empty);
+            triggered = true;
+        }
+    }
+}
+```
+This code is a self-contained trigger class which simplified the process of setting up audio triggers for the audio expert.
+A manager will have a reference to this and when this is triggered, will play an appropriate sound which is specified in the manager.
+This trigger/manager system is what allowed me to leave most of the sound engineering to my group member, while I focused on integrating other parts of the game.
+
 (##) Optimizing
 
 It was frustrating to add features to the game because we had decided that we would like to target web as a platform. WebGL builds are significantly less
