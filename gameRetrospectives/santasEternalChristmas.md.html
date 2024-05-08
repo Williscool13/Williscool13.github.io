@@ -4,27 +4,29 @@
 	Game Publish Date 2023/12/30
 
 Santa's Eternal Christmas is a solo game jam game made for the Winter MelonJam 2023 with the jam theme of **Charm**.
-It is a branch of my third person controller project (similar to [STRF](strf.md.html)), and has the player play as santa. 
+It is a branch of my third person controller project (similar to [STRF](strf.md.html)), and has the player play as Santa. 
 Santa is out for festive blood and sets out to eradicate all the other festivals from history.
 The game itself plays as a third person platformer/shooter, with a little dialogue from a narrator at the end of the game. 
 
 # The 3 Cs
 ## Character
-The player character in this game is Santa Clause. Christmas had just passed and it was time to pass the holiday torch on to the next holiday.
+The player character in this game is Santa Claus. Christmas had just passed and it was time to pass the holiday torch on to the next holiday.
 But Santa decided: Why can't it be Christmas season all year long? 
-So in the celebration village, the village where all the holiday spirits reside, santa sets out to make all the spirits feel Christmas cheer.
+So in the celebration village, the village where all the holiday spirits reside, Santa sets out to make all the spirits feel permanent Christmas cheer.
 
 ## Controls
 The game is, for the most part, controlled like a 3d platformer: WASD, Jumping, Picking up/Throwing. 
 The player would have to take advantage of the terrain and magical wind gusts to traverse the large map.
 The player spreads cheer to other festival spirits by picking up magical presents and throwing it at the other spirits' faces.
 Doing so converts them into either one of santa's elves or a mall santa.
+Alternatively, the player can use a candy cane gun and shoot magical presents instead of throwing them.
 
 
 ## Camera
 The camera remains in a third person perspective for the entirety of the gameplay portion. 
 The camera system utilizes cinemachine's third person system. 
-When colliding with a wall, the camera will attempt to keep the player character in view; though in extreme situations, the camera still breaks down.
+The collider feature is enabled, causing the camera to collide with walls to ensure that the player character is always in view.
+Otherwise, the camera typically looks at a hidden target which is 100 units in front of the player.
 
 # Level Design
 The entire game is contained within 1 large map, with 9 festival charms scattered around the area.
@@ -36,7 +38,7 @@ There were many aspects to consider when designing the level. Among them are:
 
 ## Gameplay
 
-At the start of the game, the player starts in an enclosed room. Leaving this room reveals the primary objective for the player: The World.
+The player begins the game in an enclosed room. Leaving this room reveals the primary objective for the player: The World.
 This large wooden door is sealed shut. The player is also immediately exposed to a large number of charms scattered around their screen (in addition to the HUD).
 
 ![The First View](sec/theworld.png)
@@ -126,19 +128,114 @@ The crisp colored outlines to highlight the silhouette of objects has always sto
 This toon outline technique can naturally be used to emphasize the player's selection.
 
 This is only used once in this game: To highlight the object that the player is hovering over. This could only be seen on (unused) presents and the candy cane gun.
-Although seemingly minor, the effect subtly helps inform players of their interaction status in the game.
+Although seemingly minor, the effect subtly helps inform players of their interaction state in the game.
 
 ![Toon Highlighted Candy Cane Gun](sec/glowgun.png)
 
 
 # Programming
-builds on third person shooter base that STRF forked 
 
-Tweening basics
-Mastery of Other Third party packages
+As mentioned earlier, this game builds upon my third person shooter base project I had been developing over a few months.
+The base project has several seemingly minor features that are crucial for an immersive 3-D TPS game.
 
-## Animation Rigging
-## Achievements
+(##) Footsteps
+
+The base project has a footstep system that uses scriptable object groups to easily swap between different sounds.
+Each footstep collection contains lists of footstep sounds that are randomly selected when appropriately triggered.
+
+The system triggers walking and running through animation events to better align with the visual state of the player.
+When triggered, the game samples the ground directly beneath the player for its surface material. This allows the footstep system to have
+different responses on different surfaces. This footstep changing system works with both mesh-based and terrain-based surface.
+
+The choice to sample the surface directly beneath the player is not always the appropriate one. The player's collider is a capsule. 
+This can result in a "hanging" effect when the player stands over an edge. When hanging, there may not always be a surface directly below the player. 
+This can be remedied by instead sampling the contacted surface if the player is not firmly on a surface.
+
+(###) **Footstep Collection**
+
+
+```
+[CreateAssetMenu(fileName = "FootstepCollection"
+  , menuName = "ScriptableObjects/DataContainers/FootstepCollection")]
+public class FootstepCollection : ScriptableObject
+{
+    public List<AudioClip> footstepWalkSounds = new();
+    public List<AudioClip> footstepRunSounds = new();
+    public List<AudioClip> footstepJumpSounds = new();
+    public List<AudioClip> footstepLandSounds = new();
+}
+```
+
+(###) **Surface Sampling Code**
+
+```
+public void CheckLayers() {
+	RaycastHit hit;
+	if (
+	  Physics.Raycast(
+	    transform.position, 
+		-footstepManager.transform.up, 
+		out hit, terrainCheckRange
+	  )){
+
+		// Mesh Check
+		if (hit.transform.GetComponent<SurfaceType>() != null) {
+			FootstepCollection fc = hit.transform.GetComponent<SurfaceType>().FootstepCollection;
+			currentLayerName = fc.name;
+			footstepManager.SetFootstepCollection(fc);
+			Debug.Log("Found Mesh");
+			return;
+		}
+
+		// Terrain Check
+		if (hit.transform.GetComponent<Terrain>() != null) {
+			Terrain t = hit.transform.GetComponent<Terrain>();
+
+			string layerName = terrainChecker.GetLayerName(transform.position, t);
+			int layerId = terrainChecker.GetLayerId(transform.position, t);
+			if (currentLayerName != layerName) {
+				currentLayerName = layerName;
+				foreach (FootstepCollection fc in footstepCollections) {
+					if (fc.name == currentLayerName) {
+						footstepManager.SetFootstepCollection(fc);
+					}
+				}
+			}
+			Debug.Log("Found Terrain");
+		}
+
+	}
+}
+```
+
+
+(##) Animation Rigging
+
+The player character must be able to freely swap to and use different object and weapons.
+In this game, santa is able to be unarmed, holding a present, and holding a candy cane gun.
+While possible to manually create animations for these instances, it is much more scalable to introduce dynamic animations through animation rigging.
+
+Unity has an animation rigging package that allows the independent adjustment of bones in a mesh skeleton.
+This system has a mild implementation in the base project which was tweaked to work with Santa's large blocky hands and the objects in this game.
+
+The rigging system includes the adjustment of 2 sets of bones: The left arm and right arm. With the left, typically corresponding to the front part of a weapon -- as typically found in 
+right-handed weapon wielding. The rigging system introduced Inverse Kinematics to ensure that the entire arms, from the wrist to the shoulder joint, is appropriately positioned and rotated 
+to be physically plausible.
+
+The rigging system can also be seen in the head and body. When looking upwards or downwards, the character can be seen directly looking in the appropriate direction.
+For this to be possibly implemented on all animations, it is required to be dynamically rigged. 
+
+The combination of both the hand and body rigging results in a more controlled experience for the player. The player feels more in control of their own character and has a stronger
+sense of immersion.
+
+(##) Achievements
+
+Not all systems in this game is based upon the base project's skeleton. A notable one is the achievement system, which supplies the player with additional objectives to complete.
+The game supports 4 achievements, each with a task that often requires the player to do more than requried in a typical run.
+When achieved or failed, a brief toast message will appear to communicate to the player the achievement's state. 
+
+While not particularly a technical challenge, small features help to make the game feel more developed. 
+
 
 
 
