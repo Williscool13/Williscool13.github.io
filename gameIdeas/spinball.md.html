@@ -144,15 +144,56 @@ Targets
 
 Ballance
 -------------------------------------------------------------------
-Ballance is an old German game released in 2004. The game is a level-based puzzle game where the player is a ball made of either paper, wood, or stone. 
-Each material has certain properties that the player uses to complete levels. For example, paper balls can be lifted up by wind funnels. 
-Stone balls are unable to cross bridges and will break bridges if players attempt to cross one. Stone balls are primarily used to push hard objects due to their mass.
+Ballance is an old game made by German studio Cyparade and published by Atari Europe in 2004. The game is a level-based puzzle game where the player is a ball made of any of paper, wood, or stone. 
+Each material has certain properties that the player uses to complete levels. 
+
+![Conversion](spinball/conversion.jpg)![Choices](spinball/conversionchoice.jpg)
+
+
+Movement in the game, while seemingly rotation based, is more likely to be raw movement based, and the rotation is simply a side-effect of moving on surfaces due to friction.
+
+Unlike most modern games, there are few certain parts of the game with no soft-lock prevention mechanisms. For example, if you sent 4 instead of 3 stone balls in the images below, you would block your way and are required
+to jump off and restart at the checkpoint. This is by design, as the beam above the pit serves to block attempts to climb above the obstructing stone ball. See images below for reference.
+
+![Push To Below](spinball/movestone.jpg)![Avoid Softlock](spinball/resultofmovingstone.jpg)
+
+
+Key material features:
+	- Stone
+		- Break wooden bridges
+		- Unaffected by wind
+		- Move slower but have stronger mass. This makes it harder to control, but allows easier manipulation of physics objects.
+		- Unable to scale slopes, and require momentum from a higher point to move across "wave-like" platforms
+	- Wooden
+		- Wooden balls are the standard
+		- Moves at a moderate pace, is able to use its momentum to gain elevation (U-Pipe)
+		- Unaffected by wind
+		- Easier to control
+		- Has some mass, able to move objects if moving fast enough
+		- Able to move on side-way rails
+		- Can be thrown off rails at turns if moving fast enough
+	- Paper
+		- Move slightly faster than wood
+		- Has no mass, unable to push objects
+		- Can use wind to gain elevation
+		- Surprisingly difficult to control, has no traction/friction
+		- Able to move on side-way rails
+		- Can (rather slowly) move directly upwards on slopes
+		- Can easily step over rails
+
+![Sideway Rail](spinball/sidewayrail.jpg)![Stone Momentum](spinball/usestoneotpushwoodplank.jpg)
+
+The game makes use of these features to create puzzles that require some thinking. 
+However, most puzzles are fairly self-explaning and most of the game's time is spent on what feels like a railroad.
+The game is still reasonable entertaining, through in the modern age of countless engaging games, this game feels lackluster.
+
+
 
 Mechanics
 ===================================================================
 Pinball Game
 -------------------------------------------------------------------
-At each pinball machine, the player starts by playing a game of pinball with a limited number of flipper swings. 
+At each pinball machine, the player starts by playing a game of pinball with a limited number of flipper swings (subject to change). 
 The player is presented with a path/route that they need to complete to escape the pinball machine.
 ### Puzzle Solving
 Each pinball machine is equipped with several ball types (in this alternative universe, the balls in pinball machines are not exclusively metallic). 
@@ -200,18 +241,63 @@ So the player may want to save big triggers for high value balls.
 In Twilight Zone, the “white ball” moves faster than the usual ball (and as a result is harder to control). It is released from the gumball machine by shooting 3 normal balls into it. 
 The goal is to return the white ball back into the gumball machine. This starts a “gumball mania” a multi-ball scenario where you need to guide the 3 balls into the right ramp 
 
-States
-===================================================================
-
-Movement
-===================================================================
-
-Tools
-===================================================================
 
 Changelog
 ===================================================================
+### **2024/05/12 - Prototyping and Basic Systems**
 
+In this first changelog, a few basic mechanics have been tested and implemented. 
+Most of development so far has been about the pinball section of the game: pinball machine features, physics interactions, and materials.
+
+The details of the implementation won't be extensively described here, you'll just have to play the game when it comes out.
+Though that brings up a certain problem to be addressed: the game has a not-insignificant art demand. To comfortably publish this game, it is likely that a 3d artist would need to be brought on.
+Additionally, Pinball has a great reliance on sound design to feel rewarding, and as such, may also require a sound designer to be brought on. 
+These will concerns will be dealt with when development has passed the prototyping stage.
+
+Even this early in development, a few problems arose that will affect the development of the game.
+
+	1. Momentum, Mass, and (M)Scale
+		- The pinball game leverages physics rather than using a custom hand-designed movement system, and as a result is beholden to Unity's default values. Most notably, gravity.
+				While gravity strength is potentially modifiable, I feel it is more appropriate for the game to instead work around this limitation. 
+				Initial development had the ball be 1 unit large, and all other features be equally large. The ball would move very slowly and the resulting gameplay did not at all resemble Pinball.
+		- The solution is fairly simple. Scale the game to be identical to that of real-life pinball features. Unity's gravity is the standard 9.71 units per second, which means that each unit is 1 meter.
+				A typical pinball is 27mm, or 27/1000 of a meter. All other features of the pinball machine would then be adjusted to be relative to this size. Fortunately there is a decent amount of 
+				literature on pinball machines online. Pinball machines seem to have a cult following.
+	2. Physics
+		- In addition to affecting the scale of the game, leveraging the physics system of Unity also requires tweaking of several parameters. The pinball game will require heavy tweaking, mostly based on
+				feel rather than raw numbers. The metallic pinball is typically fairly bouncy, but also rolls quickly and moves at a rapid pace.
+		- While the extremely rapid movement may seem problematic for Unity's physics system, it has not been a major issue. Particularly because Unity's rigidbodies have a "Continuous" Collision Detection
+				setting, which is an easy solution to fast-moving objects.
+		- My experience with pinball machines is limited, and I am thus unable to determine if the current physics interactions are normal. The ball is unable to be launched farther than about 3/4 of a meter.
+				This is seemingly acceptable, but further testing and experimentation may be required to ensure the pinball portion of the game is not excessively random.
+	3. [Unsolved] Getting Stuck
+		- While rare, there are certain moments in the game where the pinball gets "stuck" on seemingly smooth sloped surfaces. It is unclear why this occurs, but it seems it might be caused by low-angled slopes.
+				The problem is primarily exhibited on the inlanes. I had initially thought it was an issue of rigidbodies going to sleep due to low velocity, but disabling sleep on the ball and the flippers 
+				did not solve the issue.
+
+
+<div style="text-align:center;">![Pinball Sandbox](spinball/pinballdraft.png)</div>
+
+Several features have been developed so far: 
+	- Flippers
+	- Bumpers (not pictured)
+	- Slingshots
+	- Spring
+
+These make up the majority of the basic pinball features, though there are a few more crucial features that will be developed before exploring the Ballance part of the game.
+	- Ramps
+	- Vari Targets
+	- Kick Targets
+	- Whirlwinds
+	- Non-Euclidean Paths
+	- Stationary Targets
+	- Spinners
+
+Additionally, I have been rough-sketching some ideas for the first level; both the pinball portion and the internal portion. 
+![Pinball Level](spinball/level0Draft.JPG)![Internal Level](spinball/level0Draft2.JPG)
+The 2 materials I've decided to begin with are wood and rubber. Both are fairly different, allowing me to exploit the properties to create unique mechanics.
+For example, rubber balls can stick to electric walls due to static (or something, I'm not certain this is physically plausible). Rubber balls are elastic (in addition to being lighter) and as a result bounce farther.
+Wooden balls are heavier and can use that to activate pressure plates which require more force. Wooden balls can use their mass and momentum to move objects that rubber balls otherwise can't.
 
 <style>em.asterisk { font-style: normal; font-weight: bold; }</style>
 <!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js"></script>
