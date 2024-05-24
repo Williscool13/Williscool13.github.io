@@ -2,11 +2,98 @@
 
 						**[Will's Journal](https://williscool13.github.io/)**
 						
-
-2024/04/30: Past activities
+						
+**2024/05/24: Vulkan Engine (VKGuide)**
+=================================================================
+	(##) **Vulkan API**
+	
+	I had found myself delaying my goals for no good reason. After wallowing in my despair for an adequate amount of time, I decided I would finally
+	begin learning and using Vulkan API as part of my journey to create my own game engine. 
+	Vulkan has a reputation for being both harder and more verbose than OpenGL, so learning it would be a marathon more than a sprint. While knowing OpenGL has helped immensely
+	in both understanding the structure of a rendering pipeline and coding in c++, it did not equip me for Vulkan.
+	
+	(###) **Boilerplate**
+	
+	Vulkan just has so much adjustable values everywhere! Flags, references, libraries; there are a lot of moving parts and it all needs to be constructed before you can even begin
+	development.
+	VKGuide is useful, but the guide is still sort of rough around the edges, with a few overlooked points and minor typos. It can be hard to learn if you are unsure of whether the things 
+	you read are true. Still, it is a fantastic resource to get started with Vulkan. It also seems to be more geared towards game engines, which aligns with my goals well.
+	
+	Some parts of Vulkan still puzzle me, such as synchronization (barriers). But sentiment online seem to suggest that Vulkan's synchronization is a difficult subject to fully grasp. But difficulty 
+	only serves to motivate me. I love the struggle; the fight. 
+	
+	(###) **Compute Shaders**
+	
+	While maybe not the best idea, I did not mess with compute shaders before I hopped over to Vulkan. Mostly because it seemed a significantly complex subject. 
+	VKGuide starts with compute shaders! I can understand why. From reading the docs, setting up a compute shader pipeline is significantly easier than setting up a rendering pipeline. 
+	_Though the hard part was the setup of the rest of the program, really._ Compute shaders are actually remarkably simple, and to me is just a juiced up CPU that better exposes SIMD architecture to the
+	developer, simplifying the multithreading aspect of programming. I think it is a fairly neat bit of program, and really, if you boil shaders to their finer bits, they are basically compute shaders
+	with pre-defined structures to support the rendering pipeline.
+	
+	(###) **Docs**
+	
+	I really should have started my Vulkan journey by taking a quick look at the official documentation. Specifically the first few chapters: Introduction, Fundamentals, and Command Buffers; if I had read them
+	before starting VKGuide, I feel like I would have had an easier time grasping concepts. Certain things that VKGuide describe seem arbitrary, and can be light on further details. It can make it hard
+	to understand why we do things without a clear image of the bigger picture. The docs shed some light on why certain things are the way that they are.
+	
+	(###) **Project Structure**
+	
+	I thought this would be a nice time to demonstrate some MarkDeep magic and below is a graph describing the project's structure so far (Compute shader pipeline).
+	
+******************************************************************************************************************************
+*                        .------------------.                                                                       
+*   .----------.         |  Vulkan          |                                                  .--------------------.                 	
+*   |  SDL     |         | > Instance       |        .------------------------------.          |  Commands          |
+*   | > Init   |-------> | > Surface        |        |  Swapchain                   |--------> | > Command Pool     | 
+*   | > Window |         | > PhysDevice     |------> | > Swapchain Object           |          | > Command Buffers  |
+*   '----------'         | > Device         |        | > Swapchain Images/Views     |          '--------------------'
+*                        | > Graphics Queue |        | > Draw Image (Render Target) |                    |          
+*                        | > Queue Family   |        '------------------------------'                    |           
+*                        |                  |                                                            v             
+*                        | > VMA            |                                                                       
+*                        '------------------'                                               .-------------------------------.
+*                                                                                           |  Syncronization Structure     |
+*                                                                                           | > Fence (Command Buffer)      |
+*                                                                                           | > Semaphore (Swapchain Image) |
+*                                                     .--------------------------.          | > Semaphore (Render Finish)   |
+*                                                     |  Descriptors             |          '-------------------------------'
+*                .-------------------.                | > Descriptor Pool        |                        |                   
+*                |  Pipeline         | <--------------| > Descriptor Set         | <----------------------'                  
+*                | > Shaders         |                |   > Populate Set w/ Data |                                     
+*                | > Pipeline Object |                '--------------------------'                                          
+*                '-------------------'                                                                                        
+*                                                                                                                             
+******************************************************************************************************************************
+	
+	With all the pieces in place at the end of this structure, the draw step can finally be executed.
+	Apart from the uninteresting synchronization setup, the juice of the program exists here.
+	
+	```````````````````````````
+	void VulkanEngine::draw_background(VkCommandBuffer cmd)
+	{
+    ComputeEffect& selected = backgroundEffects[currentBackgroundEffect];
+    // Bind Pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, selected.pipeline);
+    // Push Constants
+    vkCmdPushConstants(cmd, _gradientPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &selected._data);
+    // Bind Descriptor Set
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _gradientPipelineLayout, 0, 1, &_drawImageDescriptorSet, 0, nullptr);
+    // Execute at 8x8 thread groups
+    vkCmdDispatch(cmd, std::ceil(_drawExtent.width / 8.0), std::ceil(_drawExtent.height / 8.0), 1);
+	}
+	```````````````````````````
+	- At this point in the guide, we use 2 compute shaders to show off how easy it is to change between the pipelines (toggled by a slider from imgui)
+	- Bind the chosen pipeline
+	- Attach Push Constants
+	- Bind Descriptor Set
+	- Dispatch to 64 (8x8) (GPU) threads
+	
+	Vulkan is great. So much control over the entire rendering structure in the hands of the developer, allowing for better optimization and a closer map between software and hardware.
+	
+**2024/04/30: Past activities**
 =================================================================
 
-	**Unity Shader Tutorials**
+	(##) **Unity Shader Tutorials**
 	
 	I began by following tutorials about rendering techniques, 
 	particularly from [NedMakesGames](https://www.youtube.com/@NedMakesGames) 
@@ -27,7 +114,7 @@
 	So I decided to embark on a journey to deepen my knowledge.
 	
 	
-	**Real-Time Rendering, 4th Edition**
+	(##) **Real-Time Rendering, 4th Edition**
 	
 	This led me to the highly recommended book: [Real-Time Rendering](https://www.realtimerendering.com/index.html).
 	It was long, and it took me many months to read it front to back. Perhaps it wasn't the best idea to jump right into it
@@ -51,7 +138,7 @@
 	The only problem with reading this lengthy book is that I had come out of it with knowledge, but no produced works.
 	What good is knowing what you know, if you don't use it for some purpose? 
 	
-	**CS6610 - Interactive Computer Graphics by Cem Yuksel**
+	(##) **CS6610 - Interactive Computer Graphics by Cem Yuksel**
 	
 	A name that frequently comes up in a lot of places, Cem Yuksel has a notable presence in the Computer Graphics scene. 
 	[His course](https://graphics.cs.utah.edu/courses/cs6610/spring2021/) was recommended on the Real-Time Rendering resource page and gives an introduction to rendering in realtime using OpenGL.
@@ -72,7 +159,7 @@
 	And here are some pictures:
 	![Reflections and Environment Mapping](images/reflections.png)![Directional Light](images/directionalLight.png)![Point Light on Normal Mapped Plane](images/pointHeight.png)![Tessellated Vertex Displacement](images/tessellatedVertexDisplacement.png)
 	
-	**Ray Tracing In a Weekend and The Next Week**
+	(##) **Ray Tracing In a Weekend and The Next Week**
 	
 	Briefly after finishing Real-Time Rendering, I had decided to look into alternative rendering techniques, specifically ray tracing.
 	Ray tracing is a big field of study right now, both in real-time and offline. And while it is slightly more suited
@@ -100,7 +187,7 @@
 	
 	The final render of Ray Tracing: The Next Week is being rendered at the moment, so that'll have to wait.
 	
-	**What's Next?**
+	(##) **What's Next?**
 	
 	As I stand now, I am at a crossroads, with the potential to do anything I want. I know that I would like to create my own game engine. 
 	But I don't feel equipped to make it yet. But truthfully, how often do you feel prepared when embarking on a difficult task?
