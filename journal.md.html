@@ -74,7 +74,7 @@ VkRenderingInfo renderInfo = vkinit::rendering_info(_drawExtent, &colorAttachmen
 (###) **Reverse Depth Buffer**
 
 Depth buffer funny-business is no stranger to me. I have seen and read all about it when attempting to create toon shaders and from my time learning OpenGL. Yet, the reverse depth buffer still caused me some grief. 
-Of course, I understand why it is done: Depth buffer is non-linear and to better balance the quality of . But setting it up cause more issues than it should have; even now, I'm not sure why it took me so long to do 3 things:
+Of course, I understand why it is done: It helps depth precision due to the non-linear distribution. But setting it up cause more issues than it should have; even now, I'm not sure why it took me so long to do 3 things:
 
  - If using GLM do **`#define GLM_FORCE_DEPTH_ZERO_TO_ONE`** before you include the matrix header files.
  - Swap near and far in glm::perspective 
@@ -93,7 +93,7 @@ of the forum is dead? Guess we can thank LLMs for that.
 So I decided to write a blog post about it! You can find it here on my website or on medium. I'm sure you can find the links yourselves. My project comes with a wrapper for descriptor buffers that I think could be useful
 if you would like a jumping off point for your own descriptor buffer implementations. Just follow the link from the descriptor buffer blog post.
 
-(###) Diagram of GPU pipeline
+(###) **Diagram of GPU pipeline**
 
 And I will finish this entry with a small diagram of a typical pipeline in vulkan.
 
