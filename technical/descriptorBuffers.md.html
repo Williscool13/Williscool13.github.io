@@ -1,0 +1,602 @@
+**_Vulkan Descriptor Buffers_**
+	[William Gunawan](https://www.williscool.com)
+	Original Date 2024/05/30
+
+
+
+# Introduction
+
+Descriptor buffers offer an alternative method for providing descriptor sets to your pipeline, 
+moving away from the traditional descriptor set bindings towards a more direct memory approach.
+Instead of repeatedly binding descriptor sets, you instead do a **`memcpy`** of your data into mapped memory.
+Additionally, descriptor buffers have reduced overhead and a CPU performance benefit, particularly 
+in scenarios where descriptors change frequently or need to be dynamically updated.
+
+![Rotating Suzannes made with Descriptor Buffers](descriptorBuffer/banner.png)
+
+The process of converting a traditional descriptor pool structure to descriptor buffers is fairly simple, 
+since the underlying descriptor system is memory management. This post will demonstrate a simple implementation of
+descriptor buffers in a Vulkan application. The structure of my application follows [VkGuide's](https://vkguide.dev/)
+project closely in all parts except descriptor set allocation.
+
+While descriptor buffers certainly have more complex use-cases, I will only cover the basics of descriptor buffers. 
+My implementation is not optimized for use in game engines, and is simply designed to work with the structure
+outlined by VkGuide. If you would like to see the source code for the project or my descriptor buffer wrapper, feel free to 
+visit my [GitHub](https://github.com/Williscool13/WillEngine/tree/5722a97df6691932a5c20a621dae24de8f137bc1) or see the Appendix Section.
+
+When I first encountered descriptor buffers, I found the information available to be sparse and often lacking in elaboration. This is likely because anyone who wanted to use it would already be 
+fairly familiar with these concepts. This post is written in the style and with the content I would have appreciated back then, providing a comprehensive exploration of descriptor buffers.
+
+For further reading about the motives behind the descriptor buffer extension, See this [blog post](https://www.khronos.org/blog/vk-ext-descriptor-buffer) from Khronos group.
+
+# Overview 
+
+A demonstration of descriptor buffers can also be found in the [Vulkan docs](https://docs.Vulkan.org/samples/latest/samples/extensions/descriptor_buffer_basic/README.html),
+with some comments on why certain things are done the way they are. I personally found it a little hard to follow with the framework and implementations found in other files. 
+GitHub doesn't make it very easy to navigate the project. 
+
+Descriptor buffers deprecate the following Vulkan features:
+    - vkCreateDescriptorPool
+    - vkAllocateDescriptorSets
+    - vkUpdateDescriptorSets
+    - vkCmdBindDescriptorSets
+But descriptor buffers still require the use of descriptor set layouts and pipeline layouts.
+
+My project was made with several libraries, features, and extensions:
+ - **Features**
+  - Device Buffer Address 
+  - Descriptor Indexing (Not Important)
+  - Synchronization2 (Not Important)
+  - Dynamic Rendering (Not Important)
+ - **Extensions**
+  - DescriptorBuffer
+ - **Libraries**
+  - VMA (Memory Management)
+  - VkBootstrap (Vulkan Abstraction)
+  - FMT (Formatting)
+  - fastgltf (Model Loading)
+  - SDL (Windowing and Inputs)
+
+## Descriptor Set Layouts
+
+Below is an example of 2 descriptor layouts: Uniform and Image/Sampler.
+I will be making a descriptor buffer for each of them.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+DescriptorLayoutBuilder layoutBuilder;
+layoutBuilder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+materialUniformLayout = layoutBuilder.build(engine->_device
+	, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+	, nullptr
+	, VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
+);
+
+DescriptorLayoutBuilder layoutBuilder;
+layoutBuilder.add_binding(0, VK_DESCRIPTOR_TYPE_SAMPLER);
+layoutBuilder.add_binding(1, VK_DESCRIPTOR_TYPE_SAMPLER);
+layoutBuilder.add_binding(2, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+layoutBuilder.add_binding(3, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+
+
+materialTextureLayout = layoutBuilder.build(engine->_device, VK_SHADER_STAGE_FRAGMENT_BIT
+	, nullptr, VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+All information pertaining to the creation of the descriptor layouts should be clear from the code, 
+but if you'd like to see the implementation of **`DescriptorLayoutBuilder`**, you can visit the Appendix Section.
+For reference, here is what the shader include looks like:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+layout(set = 0, binding = 0) uniform  SceneData{
+
+	mat4 view;
+	mat4 proj;
+	mat4 viewproj;
+	vec4 ambientColor;
+	vec4 sunlightDirection; //w for sun power
+	vec4 sunlightColor;
+} sceneData;
+
+layout(set = 1, binding = 0) uniform sampler colorS;
+layout(set = 1, binding = 1) uniform sampler metalS;
+layout(set = 1, binding = 2) uniform texture2D colorI;
+layout(set = 1, binding = 3) uniform texture2D metalI;
+
+layout(set = 2, binding = 0) uniform GLTFMaterialData{
+
+	vec4 colorFactors;
+	vec4 metal_rough_factors;
+
+} materialData;
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Set 0 represents the scene data: view projection matrices and sunlight/ambient color. This is constant between all draw calls. 
+Set 1 represents sampler and sampled images for individual objects. Set 2 represents material specific properties of individual objects.
+
+The reason set 1 and 2 are separated due to Sampler/Combined behavior in the implementation. Quoting the descriptor buffer blog post: 
+> "Keeping VkImageView and VkSampler objects around is a compromise. Implementations still need to keep the older binding model working in the driver and completely rewriting that is not practical."
+That is to say, descriptor buffer still uses descriptors for samplers/combined and as a result, 
+the code for putting descriptors into the buffer differs slightly between uniform and samplers/images, which we will see later.
+
+!!! Warning Uncertain Point
+    According to the sample, 
+	
+    "For combined image samplers (or samplers alone) we can’t use buffer device addresses as 
+    the implementation needs more information, so we have to put actual descriptors into the buffer instead"
+    
+    This statement implies that sampled images/stored images are excluded from this. I haven't tested it so I cant say if this is true.
+    However, in my wrapper I decided to lump CombinedSampler, Sampler, Sampled Image, and Storage Image together, as it made things simpler.
+
+
+
+## Initialize Descriptor Buffer
+
+Descriptor buffers are exactly what their name suggests: a VkBuffer. This means just like any other VkBuffer,
+it needs to be VkCreateBuffer-ed. However, the process of preparing it for use as a descriptor buffer is slightly involved.
+Conceptually, the initialization can be divided into 3 parts: 
+	1. Get DescriptorBufferProperties
+	2. Apply DescriptorSetLayout
+	3. Allocate Descriptor Buffer
+
+(###) **Get DescriptorBufferProperties**
+
+This first part is brief, but it involves getting descriptor buffer properties. 
+This is a struct which defines the size of descriptors in bytes for a descriptor buffer. 
+We'll use it when placing the descriptors into the descriptor buffer.
+
+From this step, we get: `descriptor_buffer_properties`.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+VkPhysicalDeviceProperties2KHR device_properties{};
+descriptor_buffer_properties = {};
+descriptor_buffer_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT;
+device_properties.sType =  VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
+device_properties.pNext = &descriptor_buffer_properties;
+vkGetPhysicalDeviceProperties2(physicalDevice, &device_properties)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+(###) **Apply DescriptorSetLayout**
+
+To create the descriptor buffer, we need to know the size of the layout (so Vulkan knows how much memory to allocate).
+
+From this step, we get: `descriptor_buffer_size` and `descriptor_buffer_offset`.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+this->descriptor_set_layout = descriptorSetLayout; // save layout for reference
+vkGetDescriptorSetLayoutSizeEXT(device
+	, descriptorSetLayout
+	, &descriptor_buffer_size
+);
+descriptor_buffer_size = aligned_size(descriptor_buffer_size
+	, descriptor_buffer_properties.descriptorBufferOffsetAlignment
+);
+vkGetDescriptorSetLayoutBindingOffsetEXT(device
+	, descriptorSetLayout, 0u, &descriptor_buffer_offset);
+	
+VkDeviceSize DescriptorBuffer::aligned_size(VkDeviceSize value, VkDeviceSize alignment) {
+	return (value + alignment - 1) & ~(alignment - 1);
+}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+What is descriptor_buffer_offset?
+As mentioned in the extension sample:
+> "We also need to fetch offsets of the descriptor bindings of a set layout as by the Vulkan specs size of the set layout is at least a sum of sizes of descriptor bindings of this layout but it can be higher than that and there are no guarantees about the layout of descriptor bindings in a descriptor set layout, meaning that first descriptor binding of a set can start exactly a the beginning of a set layout memory or it can start with non 0 offset if driver implementation puts some metadata there."
+What this means is later on when placing descriptors into the descriptor buffer, we will need to offset the pointer by this offset value. 
+This is important! Incorrect pointers for descriptor bindings can lead to undefined behavior when placing descriptors into the descriptor buffer.
+
+(###) **Allocate Descriptor Buffer**
+
+This is the first step in this process where uniform and sampler descriptor buffers diverge. Though not by a lot.
+When creating the buffer, Sampler Descriptor Buffers need to be created with the additional flag: `VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT`
+
+From this final step, we get a fully defined AllocatedBuffer descriptor_buffer, which is our Descriptor Buffer.
+AllocatedBuffer is just a simple struct to hold buffer information alongside its memory allocation.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+struct AllocatedBuffer {
+    VkBuffer buffer;
+    VmaAllocation allocation;
+    VmaAllocationInfo info;
+};
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+VkBufferCreateInfo bufferInfo = 
+	{ .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+bufferInfo.pNext = nullptr;
+bufferInfo.size = descriptor_buffer_size * maxObjectCount;
+bufferInfo.usage =
+	VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT
+	| VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT; // extra sampler flag goes here
+VmaAllocationCreateInfo vmaAllocInfo = {};
+vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+VK_CHECK(vmaCreateBuffer(allocator, &bufferInfo, &vmaAllocInfo
+	, &descriptor_buffer.buffer
+	, &descriptor_buffer.allocation
+	, &descriptor_buffer.info));
+
+buffer_ptr = descriptor_buffer.info.pMappedData;
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+## Placing Descriptors into Buffers
+
+With the descriptor buffer appropriately set up, we can finally begin writing descriptors into the buffer.
+The most important function to be called here is vkGetDescriptorEXT.
+
+As expected, Uniforms and Samplers/Combined diverge here once again.
+The following helper function is used for both descriptor buffer types and simply retrieves the device address of the buffer specified.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+VkDeviceAddress DescriptorBuffer::get_device_address(VkDevice device, VkBuffer buffer)
+{
+	VkBufferDeviceAddressInfo deviceAdressInfo{};
+	deviceAdressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+	deviceAdressInfo.buffer = buffer;
+	uint64_t address = vkGetBufferDeviceAddress(device, &deviceAdressInfo);
+
+	return address;
+}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+(###) **Uniform**
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+int DescriptorBufferUniform::setup_data(VkDevice device, const AllocatedBuffer& uniform_buffer, size_t allocSize) {
+	if (free_indices.empty()) { return -1; }
+	int index = free_indices.top();
+	free_indices.pop();
+
+	VkDeviceAddress ad = get_device_address(device, uniform_buffer.buffer);
+	VkDescriptorAddressInfoEXT addr_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT };
+	addr_info.address = ad;
+	addr_info.range = allocSize; // alloc size is the size of the uniform_buffer data, in my case it was sizeof(uniform_struct)
+	addr_info.format = VK_FORMAT_UNDEFINED;
+
+	VkDescriptorGetInfoEXT buffer_descriptor_info{ VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT };
+	buffer_descriptor_info.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	buffer_descriptor_info.data.pUniformBuffer = &addr_info;
+	
+	// at index 0, should be -> pointer + offset + 0 * descriptor_buffer_size
+	// at index 1, should be -> pointer + offset + 1 * descriptor_buffer_size etc.
+	char* buffer_ptr_offset = (char*)buffer_ptr + descriptor_buffer_offset + index * descriptor_buffer_size;
+
+	vkGetDescriptorEXT(
+		device
+		, &buffer_descriptor_info
+		, descriptor_buffer_properties.uniformBufferDescriptorSize
+		, (char*)buffer_ptr_offset
+	);
+	
+	return index;
+}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+What exactly does the code above do? Imagine for a minute that the following bar is the entire Descriptor Buffer we allocated, and it has enough space for only 1 uniform_buffer. 
+This would be reflected in the buffer initialization code:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// where maxObjectCount = 1
+bufferInfo.size = descriptor_buffer_size * maxObjectCount;
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+This Descriptor Buffer is just big enough to contain the layout we specified during buffer creation. 
+In this DescriptorBufferUniform example, the uniform_buffer descriptor that we want to place in the buffer is the purple bar below.
+
+![Diagram of Descriptor Buffer Offset](descriptorBuffer/uniformDescriptorBuffer.png)
+
+
+Following the diagram, `buffer_ptr` would represent index 0 in this buffer and **`descriptor_buffer_offset`** would have a value of 1. Since index would be 0, we can disregard the rest of the equation.
+We want to put the descriptor buffer into its appopriate descriptor binding to avoid overwriting what might be important metadata!
+
+For this reason, when we call vkGetDescriptorEXT, we pass it buffer_ptr + descriptor_buffer_offset. Without this offset, results will be undefined.
+
+(###) **Sampler/Combined**
+
+Sampler/Combined descriptors are not quite as simple, but when it comes to placing them in descriptor buffers, similar rules apply:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+void DescriptorBufferSampler::setup_data(VkDevice device, std::vector<std::pair<VkDescriptorType, VkDescriptorImageInfo>> data) {
+	uint64_t accum_offset{ descriptor_buffer_offset };
+
+	if (descriptor_buffer_properties.combinedImageSamplerDescriptorSingleArray == VK_FALSE) {
+		fmt::print("This implementation only supports combinedImageSamplerDescriptorSingleArray\n");
+		return;
+	}
+
+	for (int i = 0; i < data.size(); i++) {
+		// image_descriptor_info
+		VkDescriptorGetInfoEXT image_descriptor_info{ VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT };
+		image_descriptor_info.type = data[i].first;
+		switch (data[i].first) {
+		case VK_DESCRIPTOR_TYPE_SAMPLER:
+			image_descriptor_info.data.pSampler = &data[i].second.sampler;
+			break;
+		case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+			image_descriptor_info.data.pCombinedImageSampler = &data[i].second;
+			break;
+		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+			image_descriptor_info.data.pSampledImage = &data[i].second;
+			break;
+		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+			image_descriptor_info.data.pStorageImage = &data[i].second;
+			break;
+		default:
+			fmt::print("DescriptorBufferImage::setup_data() called with a non-image/sampler descriptor type\n");
+			return;
+		}
+
+		// descriptor_size
+		size_t descriptor_size{};
+		switch (data[i].first) {
+		case VK_DESCRIPTOR_TYPE_SAMPLER:
+			descriptor_size = descriptor_buffer_properties.samplerDescriptorSize;
+			break;
+		case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+			descriptor_size = descriptor_buffer_properties.combinedImageSamplerDescriptorSize;
+			break;
+		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+			descriptor_size = descriptor_buffer_properties.sampledImageDescriptorSize;
+			break;
+		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+			descriptor_size = descriptor_buffer_properties.storageImageDescriptorSize;
+			break;
+		default:
+			fmt::print("DescriptorBufferImage::setup_data() called with a non-image/sampler descriptor type\n");
+			return;
+		}
+
+
+		// pointer to start point
+		char* buffer_ptr_offset = (char*)buffer_ptr + accum_offset;
+
+		vkGetDescriptorEXT(
+			device,
+			&image_descriptor_info,
+			descriptor_size,
+			buffer_ptr_offset
+		);
+
+		accum_offset += descriptor_size;
+	}
+}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+!!! Error
+    It seems that code formatting in markdeep is editing my code. I am unsure of why this might be the case. For more accurate code, please visit my GitHub. This snippet can be found in descriptor_buffer.h/cpp.
+
+The code is slightly long as it is made to support the 4 different types of image/sampler descriptors. 
+Unlike uniform buffers, the descriptor buffer implementation requires more information for sampler/combined. We will have to put the actual descriptors into the buffer.
+Other than that, placing the descriptor into the buffer is fairly identical.
+
+The image below might help explain the memory allocation sequence in that loop.
+
+![Diagram Demonstrating Cummulative Offset](descriptorBuffer/samplerDescriptorBuffer.png)
+
+
+
+## Bind Buffers and Set Offsets
+
+Once the data has been set up, we can bind the descriptor buffer and set offsets. I will modify my code slightly to reduce 
+the specific engine implementation.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+VkDescriptorBufferBindingInfoEXT DescriptorBuffer::get_descriptor_buffer_binding_info(VkDevice device)
+{
+	VkDeviceAddress address = get_device_address(device, descriptor_buffer.buffer);
+
+	VkDescriptorBufferBindingInfoEXT descriptor_buffer_binding_info{};
+	descriptor_buffer_binding_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
+	descriptor_buffer_binding_info.address = address;
+	descriptor_buffer_binding_info.usage
+		= VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
+	// you would use the additional flag VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT for uniform descriptor buffers!
+	return descriptor_buffer_binding_info;
+}
+
+// first we bind the descriptor buffers. Order here doesn't matter, but you will need to know which index corresponds to which buffer.
+VkDescriptorBufferBindingInfoEXT descriptor_buffer_binding_info[3]{};
+descriptor_buffer_binding_info[0] = gpuSceneDataDescriptorBuffer.get_descriptor_buffer_binding_info(_device);
+descriptor_buffer_binding_info[1] = materialTextureDescriptorBuffer.get_descriptor_buffer_binding_info(_device);
+descriptor_buffer_binding_info[2] = materialUniformDescriptorBuffer.get_descriptor_buffer_binding_info(_device);
+vkCmdBindDescriptorBuffersEXT(cmd, 3, descriptor_buffer_binding_info);
+
+uint32_t buffer_index_ubo = 0;
+uint32_t buffer_index_image = 1;
+uint32_t buffer_index_material = 2;
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Once the descriptor buffers are bound, we set the descriptor buffer offsets. This gives the draw call a pointer to the start of the descriptor buffer for each descriptor buffer group.
+In most implementations it should be expected that descriptor buffers allocate memory space for more than 1 descriptor layout. For example, my sampler descriptor buffer has enough space for 10 
+different layouts which allows 10 different objects to use the same descriptor buffer.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+VkDeviceSize global_buffer_offset = 0;
+VkDeviceSize texture_buffer_offset = textureDescriptorBufferIndex * materialTextureDescriptorBuffer->descriptor_buffer_size;
+VkDeviceSize uniform_buffer_offset = uniformDescriptorBufferIndex * materialUniformDescriptorBuffer->descriptor_buffer_size;
+
+vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout
+		, 0, 1, &buffer_index_ubo, &global_buffer_offset);
+vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout
+		, 1, 1, &buffer_index_image, &texture_buffer_offset);
+vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout
+		, 2, 1, &buffer_index_material, &uniform_buffer_offset);
+
+
+vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+GPUDrawPushConstants pushConstants;
+pushConstants.vertexBuffer = draw.vertexBufferAddress;
+pushConstants.worldMatrix = draw.transform;
+vkCmdPushConstants(cmd, draw.material->pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
+vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, 0);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+My implemenation allows you to render multiple objects with different uniform buffers and images from the same descriptor buffers. It isn't terribly complicated once you get a grasp
+of how the underlying memory mechanisms function. In my specific engine implementation, the uniform and image buffers are associated with a material, so multiple objects can use the same material and by extension
+the same buffers with the same data. Additionally, you can see descriptor buffers still support the use of push constants, so you can use push constants for small amounts of data as you would have with descriptor pools.
+
+My implementation is not ideal. In the draw call, a pipeline is bound for every object in the draw-list. In practice, you should minimize the number of times you bind pipelines and call vkCmdBindDescriptorBuffersEXT.
+
+That is the end of the descriptor buffer implementation, no changes to the shaders are necessary!
+
+## Modifying Descriptor Values
+
+To modify descriptor values, you just need to modifty the uniform_buffer. 
+In my code, I modify the gpuSceneDataBuffer struct (it is an AllocatedBuffer object, see earlier for code) every frame for updates about the projection/view matrices and sunlight/ambient color.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+glm::mat4 view = glm::lookAt(glm::vec3(0, 0, camera_dist), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+glm::mat4 proj = glm::perspective(glm::radians(70.0f), (float)_windowExtent.width / (float)_windowExtent.height, 10000.0f, 0.1f);
+sceneData.view = view;
+sceneData.proj = proj;
+sceneData.viewproj = sceneData.proj * sceneData.view;
+
+//some default lighting parameters
+sceneData.ambientColor = glm::vec4(.1f);
+sceneData.sunlightColor = glm::vec4(1.f);
+sceneData.sunlightDirection = glm::vec4(0, 1, 0.5, 1.f);
+
+// writing directly, if larger data, use staging buffer
+GPUSceneData* sceneUniformData = (GPUSceneData*)gpuSceneDataBuffer.allocation->GetMappedData();
+memcpy(sceneUniformData, &sceneData, sizeof(GPUSceneData));
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Changing this directly affects the descriptor buffer, you are not required to call vkGetDescriptorEXT every time.
+
+Changing the descriptor values for sampler/images is slightly less direct. I am unsure if this is the intended way, but to update my sampler/image descriptors, I had to go through the process of 
+calling vkGetDescriptorEXT again. This of course, is because sampler/images require the full descriptor to be used rather than just a buffer. 
+
+This means that I had to redefine VkDescriptorImageInfo and call DescriptorBufferSampler.set_data. set_data is identical to setup_data, but instead of receiving a buffer index, you specify a buffer index to write changes to.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+VkDescriptorImageInfo colorCombinedDescriptor{};
+colorCombinedDescriptor.sampler = _defaultSamplerNearest;
+colorCombinedDescriptor.imageView = _whiteImage.imageView; 
+colorCombinedDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+VkDescriptorImageInfo metalRoughCombinedDescriptor{};
+metalRoughCombinedDescriptor.sampler = _defaultSamplerLinear;
+metalRoughCombinedDescriptor.imageView = _errorCheckerboardImage.imageView;
+metalRoughCombinedDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+// needs to match the order of the bindings in the layout
+std::vector<std::pair<VkDescriptorType, VkDescriptorImageInfo>> combined_descriptor = {
+				{ VK_DESCRIPTOR_TYPE_SAMPLER, colorCombinedDescriptor },
+				{ VK_DESCRIPTOR_TYPE_SAMPLER, metalRoughCombinedDescriptor },
+				{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, colorCombinedDescriptor },
+				{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, metalRoughCombinedDescriptor} 
+};
+
+metallicRoughnessPipelines.materialTextureDescriptorBuffer.set_data(_device, combined_descriptor, 0);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+## Cleanup
+
+When cleaning up your memory at the end of the program you only need to release the following:
+ - Descriptor Set Layouts (as you typically would)
+ - Uniform_Buffer VkBuffer (as you typically would)
+ - Images and Samplers (as you typically would)
+ - Descriptor Buffer's VkBuffer
+
+## Performance Advice
+
+I haven't done any benchmarking as I don't have the setup to begin comparing performance, but if you have any benchmarks to share, I'd love to hear about it. Feel free to email me at twtw40@gmail.com.
+That said, we can refer to the blog post for advice on performance:
+> "Changing the descriptor buffer bindings is highly discouraged, just like D3D12, but this depends on the implementation. Changing between descriptor sets and descriptor buffers between commands is also highly discouraged. Do not mix and match if possible. A good mental model is that changing the descriptor buffer might imply an ALL_COMMANDS - ALL_COMMANDS pipeline barrier. Push descriptors can still be used alongside descriptor buffers as a way to bridge the gap without the extra cost"
+
+In other words:
+	1. Changing Descriptor Buffer Bindings is expensive/has synchronization implications.
+	2. Don't use both Descriptor Sets and Descriptor Buffers in the same pipeline.
+	3. The use of Push Descriptors is permitted.
+
+Some additional advice from me:
+
+
+1. Cache VkPhysicalDeviceDescriptorBufferPropertiesEXT, perhaps as a static property. It is 256 bytes. It is constant for a specified physical device.
+2. Take a look at my wrapper! It can help serve as a starting point for your descriptor buffers.
+
+
+## Common Validation Errors
+
+There are a few common validation errors I ran into when changing from the traditional descriptor pool system to descriptor buffers.
+
+1. DescriptorSetLayout must be initialized with the flag VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT.
+2. The pipeline has to be initialized with the flag VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT.
+3. The order of set layouts in VkPipelineLayoutCreateInfo.pSetLayouts matters.
+4. Your application may throw errors if buffer sizes are not large enough/you attempt to vkGetDescriptorEXT outside of your buffer range.
+
+## Errors with no Validation
+
+Some errors can occur with no validation errors that make it particularly difficult to debug.
+
+	1. If you attempt to call vkCmdSetDescriptorBufferOffsetsEXT on a memory address that sits outside of the currently bound descriptor buffer (with vkCmdBindDescriptorBuffersEXT), your application my quit with the 
+			"Device Lost" error. This crash comes with no other validation errors.
+	2. I'm uncertain if this is a common issue, but when interleaving my samplers and sampled images: 0-sampler, 1-image, 2-sampler, 3-image; my shader does not function as I expect it to. All code equal, when I changed
+			the order to be: 0-sampler, 1-sampler, 2-image, 3-image; the shader functioned as expected. If anyone has insight on why this might be the case, please email me at twtw40@gmail.com.
+
+# Summary/TL;DR
+
+Descriptor Buffers are an efficient way to pass descriptors to your GPU with fewer abstractions than descriptor pools. The process involves 4 steps:
+1. Instantiate Buffer
+2. Setup Data
+3. Bind Descriptor Buffers
+4. Set Descriptor Offsets
+
+Thanks for reading this post. If some things are unclear or could use more elaboration please email me about it at twtw40@gmail.com. 
+I'd be happy to update and improve this post to better explan how descriptor buffers work.
+
+# Appendix
+
+## Descriptor Layout Builder
+
+(###) **vk_descriptor.h**
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+struct DescriptorLayoutBuilder {
+
+    std::vector<VkDescriptorSetLayoutBinding> bindings;
+
+    void add_binding(uint32_t binding, VkDescriptorType type);
+    void clear();
+    VkDescriptorSetLayout build(VkDevice device
+		, VkShaderStageFlags shaderStages
+		, void* pNext = nullptr
+		, VkDescriptorSetLayoutCreateFlags flags = 0
+	);
+};
+
+void DescriptorLayoutBuilder::add_binding(uint32_t binding
+	, VkDescriptorType type)
+{
+    VkDescriptorSetLayoutBinding newbind{};
+    newbind.binding = binding;
+    newbind.descriptorCount = 1;
+    newbind.descriptorType = type;
+
+    bindings.push_back(newbind);
+}
+
+void DescriptorLayoutBuilder::clear()
+{
+    bindings.clear();
+}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+(###) **vk_descriptor.cpp**
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+VkDescriptorSetLayout DescriptorLayoutBuilder::build(VkDevice device
+	, VkShaderStageFlags shaderStages
+	, void* pNext
+	, VkDescriptorSetLayoutCreateFlags flags
+){
+    for (auto& b : bindings) {
+        b.stageFlags |= shaderStages;
+    }
+
+    VkDescriptorSetLayoutCreateInfo info = { 
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO 
+	};
+    info.pNext = pNext;
+
+    info.pBindings = bindings.data();
+    info.bindingCount = (uint32_t)bindings.size();
+    info.flags = flags;
+
+    VkDescriptorSetLayout set;
+    VK_CHECK(vkCreateDescriptorSetLayout(device, &info, nullptr, &set));
+
+    return set;
+}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>

@@ -3,6 +3,73 @@
 						**[Will's Journal](https://williscool13.github.io/)**
 						
 						
+
+next chapters
+
++-----------------------------------------------+
+|               Vertex Input                    |
++-----------------------------------------------+
+|              Input Assembly                   |
++-----------------------------------------------+
+|               Vertex Shader                   |
++-----------------------------------------------+
+|           (Optional) Tessellation             |
++-----------------------------------------------+
+|         (Optional) Geometry Shader            |
++-----------------------------------------------+
+|               Rasterization                   |
++-----------------------------------------------+
+|                 Clipping                      |  <-- Implicit
++-----------------------------------------------+
+|           Perspective Divide                  |  <-- Implicit
++-----------------------------------------------+
+|        Primitive Assembly (part)              |  <-- Implicit
++-----------------------------------------------+
+|         Viewport Transformation               |  <-- Implicit
++-----------------------------------------------+
+|             Fragment Generation               |  <-- Implicit
++-----------------------------------------------+
+|          Early Fragment Tests                 |  <-- Implicit
++-----------------------------------------------+
+|               Fragment Shader                 |
++-----------------------------------------------+
+|           Late Fragment Tests                 |  <-- Implicit
++-----------------------------------------------+
+|               Color Blending                  |
++-----------------------------------------------+
+|            Pixel Ownership Test               |  <-- Implicit
++-----------------------------------------------+
+|             Viewport and Scissor              |
++-----------------------------------------------+
+
+interestingly enough, index buffer data isnt passed to the shader, but is rather used as direct data from 
+the alternative rendering command vkCmdDrawIndexed
+where the data is supplied by the command vkCmdBindIndexBuffer
+
+the typical way of directly drawing vertices is through vkDmdDraw(cmd, vertexCount, instanceCount, firstVertex, firstInstance)
+
+why are there a billion changes to APIs? gltf has different api examples - from official docs, from vkguide, from their examples. Only the one from examples work for me.
+need to do mappedgltffile::frompath and loadgltd(gltfFile.get(), etc.). Other ways dont work, and several functions have had their names changed.
+
+vulkan seems to be continuously evolving, from renderpass/framebuffer (which im not learning) to dynamic rendering; pipelines to shader objects; descriptor sets to descriptor buffer; buffer attachments to buffer references.
+It seems that keeping up with vulkan is an unending task and I have to ask myself, what are the benefits of adopting new techniques and when do i plant my feet and start developing with what is around?
+
+I really enjoy the idea of buffer references. It maps very intuitively to GPU memory and simplifies the process of allocating and accessing data. of course with the caveat that you need to be careful not
+to go out of bounds, though with vertex indices it shouldn't ever be an issue (assuming the indices were automatically generated). 
+
+compute shader has mixed results with the scaling of screen resolution. Cause it uses gl_GlobalInvocationID, which is determined by absolute pixel count. 
+When at a lower rendering resolution (e.g. 100x100), rather than scaling what used to be 1920x1080 to the new lower res, it renders only the 100x100 resolution due to how compute shaders are dispatched.
+To be able to scale down like this, the shader would need to know the low-res bounds to rescale to its true screen position.
+The mesh is adjusted to render at the center of the 100x100, which is why scaling the resolution keep the mesh at the center of the window. If the mesh is drawn relative to the true image resolution,
+it would shift from the center of the window as exptected. 
+
+It cause me a lot of grief, so ill put it here for my future reference. When using GLM in vulkan, remember that z ranges from 0 to 1, so activate the appropriate macro. When doing an inverse
+z buffer, 3 things need to be done: change near far (simply swap near and far values in glm::projection), change depth stencil reset value (to 0), change depth comparison operation (to greater/equal)
+
+I finally managed to set up descriptor buffers! I cant believe i did it. There is so little information out there about this; having to break down information from source code and a brief sample 
+is really hard! I will probably make a special post about using it! In the article ill cover shared buffers, multiple of a certain type buffer. Ill also share my wrapper which makes setting it up slightly easier.
+
+
 **2024/05/24: Vulkan Engine (VKGuide)**
 =================================================================
 	(##) **Vulkan API**
