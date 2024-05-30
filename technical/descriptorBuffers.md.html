@@ -29,7 +29,7 @@ fairly familiar with these concepts. This post is written in the style and with 
 
 For further reading about the motives behind the descriptor buffer extension, See this [blog post](https://www.khronos.org/blog/vk-ext-descriptor-buffer) from Khronos group.
 
-# Overview 
+# Descriptor Buffers 
 
 A demonstration of descriptor buffers can also be found in the [Vulkan docs](https://docs.Vulkan.org/samples/latest/samples/extensions/descriptor_buffer_basic/README.html),
 with some comments on why certain things are done the way they are. I personally found it a little hard to follow with the framework and implementations found in other files. 
@@ -478,6 +478,8 @@ std::vector<std::pair<VkDescriptorType, VkDescriptorImageInfo>> combined_descrip
 
 metallicRoughnessPipelines.materialTextureDescriptorBuffer.set_data(_device, combined_descriptor, 0);
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Practical Considerations and Best Practices
 
 ## Cleanup
 
