@@ -1,0 +1,85 @@
+**_Multi-Sample Anti-Aliasing_**
+	[William Gunawan](https://www.williscool.com)
+	Original Date 2024/06/04
+	
+	
+# Introduction
+
+Multi-sample anti-aliasing (MSAA) has been around for some time as another tool in a graphics developer's toolkit to remove ["jaggies"](https://en.wikipedia.org/wiki/Jaggies). 
+The motivation behind the creation of MSAA can be understood by first observing its predecessor super-sampling anti-aliasing (SSAA). 
+SSAA is an AA technique that produces visually clear images by rendering the scene at a higher resolution (usually 2x or 4x) and downsampling to the target resolution. 
+The drawback of using SSAA is clear: for every pixel in the final output, you compute 2/4x the typical number of samples. 
+
+MSAA operates similarly, taking multiple samples from a single pixel to determine the final color of the pixel. However, MSAA attempts to solve the computational cost associated with additional sampling by
+only executing a shading computation once per triangle per pixel. This means if all 4 MSAA sample points sample from the same triangle, the computation is only done once, significantly reducing the cost of that pixel. 
+In this situation, the pixel in question is not an edge and therefore anti-aliasing techniques are not necessary anyway. In SSAA, this pixel would have calculated the result of all 4 pixels regardless, rapidly ballooning computational costs for no benefit.
+
+In essence, MSAA reduces the application of AA only to regions that require it. As unlikely as it is, if every pixel in a screen is covered by 4 different triangles at each sample per pixel, MSAA is equivalent in cost
+to SSAA. 
+
+MSAA has been adopted by the industry and can be seen implemented at the hardware level through dedicated hardware units. This of course means that any attempts at alternative AA techniques may take longer to adopt
+due to the "unfair" advantage MSAA has due to better mapping to hardware. Most GPUs today at minimum support 2x, 4x, and 8x MSAA at a hardware level, though certain GPUs may support up to 16x MSAA.
+
+# Performance
+
+Given the extensive literature on how exactly MSAA works online (see [LearnOpenGL](https://learnopengl.com/Advanced-OpenGL/Anti-Aliasing) and [Vulkan Docs](https://docs.vulkan.org/samples/latest/samples/performance/msaa/README.html),
+I don't think it's productive for me to continue reiterating it here. 
+
+I recently implemented MSAA on my Vulkan Renderer/Game Engine and would like to share the results of profiling the 4 different builds with you. My GPU only supports up to 8x MSAA, so the builds will include 1x (no MSAA), 2x, 4x, and 8x.
+
+## Image Quality
+
+Let us first begin by discussing image quality. After all, anti-aliasing is implemented to reduce the jaggies produced by aliasing. Below are 4 image renders of the same scene with all the same parameters with the exception of MSAA.
+The times on the UI are all averaged over the past 500 frames (which is ~3.5s on my 144hz monitor).
+
+![No MSAA](msaa/0xMSAA.png)![2x MSAA](msaa/2xMSAA.png)
+![4x MSAA](msaa/4xMSAA.png)![8x MSAA](msaa/8xMSAA.png)
+
+The images above are slightly small so feel free to click on them to open them in a new tab. Alternatively the images are available to download at the [source code of this website](https://github.com/Williscool13/Williscool13.github.io).
+Let's take a closer look.
+
+![No MSAA](msaa/0xZoom.png)![2x MSAA](msaa/2xZoom.png)
+![4x MSAA](msaa/4xZoom.png)![8x MSAA](msaa/8xZoom.png)
+
+The images above makes it clear that a discrete representation of pixels is simply not good for image quality. It is particularly noticeable in areas where effects last only for a few pixels. 
+Light does not look believable when it spans only a pixel-wide.
+
+![No MSAA](msaa/0xZoom1.png)![2x MSAA](msaa/2xZoom1.png)
+![4x MSAA](msaa/4xZoom1.png)![8x MSAA](msaa/8xZoom1.png)
+
+The grates look especially bad with no MSAA, with each pixel confused on which part of the grate to sample. 
+Movement makes the grates look even worse, exhibiting an effect known as "sizzling" - shimmering, flickering, or clawing patterns on the image. 
+
+![No MSAA](msaa/0xZoom2.png)![2x MSAA](msaa/2xZoom2.png)
+![4x MSAA](msaa/4xZoom2.png)![8x MSAA](msaa/8xZoom2.png)
+
+Finally, light shafts such as the one above (which are just transparent cone-like meshes) look especially unconvincing. Humans have developped a keen perception on the effects of lighting. 
+We are accustomed to certain light interactions and can very quickly perceive uncanny/unrealistic lights.
+
+## Performance
+
+The immediate question is: what do we lose by enabling anti-aliasing? This is a common question when implementing graphics techniques.
+I will lead first with the GPU utilization of the different levels.
+
+![No MSAA](msaa/0xMSAAUtilization.png)![2x MSAA](msaa/2xMSAAUtilization.png)
+![4x MSAA](msaa/4xMSAAUtilization.png)![8x MSAA](msaa/8xMSAAUtilization.png)
+
+You don't need to zoom in to the images to see a clear trend: as the MSAA level increases, so too does the GPU utilization. 
+The more GPU used to calculate MSAA, the less there will be for other graphic effects. My scene is not significantly complex, and my shading setup is also fairly basic. At all levels of MSAA, my renderer can output a consistent 144 fps. 
+
+Because MSAA scales as a power of 2, the difference between no MSAA and 4xMSAA is almost equal to the difference between 4xMSAA and 8xMSAA (unsurprisingly). 
+This problem then becomes a classic tradeoff consideration. At what point do we hit diminishing returns as a ratio of the performance cost?
+
+Judging from the images above, I think it can safely be said that 4x MSAA is the perfect solution to achieve reasonable visual fidelity at a fairly unexpensive cost. Most of the jaggies are smoothed out by the 4x point, and although at 8x the image looks
+even better, it doesn't look significantly better. It does not justify the additional cost.
+
+## NSight 
+
+Profiling all 4 builds shows exactly what you might except. Each draw call takes longer to execute, resulting in an increased draw-time overall. It is fairly noticeable, with 8xMSAA taking over 2.5x longer than no MSAA to render the entire frame.
+
+
+![No MSAA](msaa/0xProfile.png)![2x MSAA](msaa/2xProfile.png)
+![4x MSAA](msaa/4xProfile.png)![8x MSAA](msaa/8xProfile.png)
+
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
