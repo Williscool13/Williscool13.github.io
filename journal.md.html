@@ -72,6 +72,9 @@ I think it is fairly efficient, clear, and simple solution. Because I store and 
 the per instance data. This solution is not only faster than before, but is also allows for easier incorporation of the GPU for techniques such as Frustum and Occlusion Culling. As for memory, this solution uses equal or slightly less memory than 
 the old renderer. 
 
+My solution leverages the organization of gltf filesa and minimizes data duplication on GPU memory. Taking a step back to look at the bigger picture, my implementation is not much different from VkGuide's solution. Their solution
+has shared resources contained in objects on the CPU, whereas mine stores these shared resources in arrays of VkBuffers.
+
 I can safely say that it turned out much better than I could have ever hoped.
 
 (###) **Frustum Culling**
