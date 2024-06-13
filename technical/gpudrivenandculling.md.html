@@ -1,0 +1,152 @@
+**GPU-Driven Rendering and Culling**
+	[William Gunawan](https://www.williscool.com)
+	Written on 2024/06/13
+	
+	
+# Introduction
+
+It is not an uncommon idea to offload computation responsibilities to the GPU. It has strong multi-threading capabilities and is remarkably faster at computing than the CPU.
+This is the motivation behind the practice "GPU-Driven Rendering". A standard practice is to use the GPU to generate draw calls and execute culling algorithms such as frustum/occlusion culling.
+
+I first encountered this when I had decided I wanted to prioritize performance in my engine. I looked into culling algorithms such as frustum culling bounding boxes/spheres and several occlusion culling algorithms such as Hierarchical Z-Buffer.
+Though I haven't implemented occlusion culling, I had modified the structure of my project to prepare for gpu techniques. First, the mesh is now drawn in one large draw call throgh DrawIndexedIndirect. Second, a compute shader now calculates 
+whether a bounding sphere is out of frustum bounds. 
+
+I briefly talk about how my renderer was structured to prepare for [GPU-Driven Rendering and Culling in my journal](../journal.md.html#2024/06/07:gpu-drivenrenderingandfrustumculling).
+
+A sample from Vulkan regarding GPU draw call generation and culling can be found in their [documentation](https://docs.vulkan.org/samples/latest/samples/performance/multi_draw_indirect/README.html).
+
+
+# Performance
+
+Unsurprisingly, combining all individual draw calls of a mesh into 1 large GPU-generated indirect call has been a significant performance boost. Bind calls and DrawIndexed calls are the "hottest" part of the rendering process, and minimizing these
+will go a long way to reduce overhead. 
+
+When compared to the previous build (post-MSAA implementation) the new build not only draws significantly faster (~0.35ms -> ~0.06ms), it processes 9x the number of vertices (some of the meshes/submeshes are frustum culled) and uses a more complete
+PBR shading model (GGX, Height-Correlated Smith, and Schlick) which executes 2 texture samples instead of 1 (color and metallic/roughness).
+
+![](gpudriven/multidrawPerformance.png)
+
+While a little difficult to debug whether or not the frustum culling actually works, a quick glance at the task manager GPU utilization clearly indicates that the program uses significantly less of the GPU when facing the black digital void.
+
+
+# GPU Frustum Culling
+
+The frustum culling process involves 2 steps:
+
+1. Generate a bounding box/sphere around the mesh/sub-mesh of choice.
+2. In a compute shader, determine whether this bounding area lies within the frustum volume.
+3. Based on the calculation, modify the indirect draw struct for this frame's draw call.
+
+The first step is fairly easy, though a proper efficient implementation to determine the optimal bounding sphere volume around a mesh eludes me (Though I didn't look very far). Sure enough, the problem of the "minimal bounding sphere" is a 
+fairly serious field of research in the field of mathematics. I decided to simply "borrow" the implementation described in the vulkan samples.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+BoundingSphere::BoundingSphere(const RawMeshData& meshData) : center(0.0f, 0.0f, 0.0f), radius(0.0f)
+{
+	const std::vector<MultiDrawVertex>& _vs = meshData.vertices;
+	this->center = { 0, 0, 0 };
+
+	for (auto&& vertex : _vs)
+	{
+		this->center += vertex.position;
+	}
+	this->center /= static_cast<float>(_vs.size());
+	this->radius = glm::distance2(_vs[0].position, this->center);
+	for (size_t i = 1; i < _vs.size(); ++i)
+	{
+		this->radius = std::max(this->radius, glm::distance2(_vs[i].position, this->center));
+	}
+	this->radius = std::nextafter(sqrtf(this->radius), std::numeric_limits<float>::max());
+}
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Once this is determined, at a per-instance level, the compute shader will determine whether the sphere lies inside the frustum volume.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+bool check_is_visible(mat4 mat, vec3 origin, float radius)
+{
+	uint plane_index = 0;
+	for (uint i = 0; i < 3; ++i)
+	{
+		for (uint j = 0; j < 2; ++j, ++plane_index)
+		{
+			if (plane_index == 2 || plane_index == 3)
+			{
+				continue;
+			}
+			const float sign  = (j > 0) ? 1.f : -1.f;
+			vec4        plane = vec4(0, 0, 0, 0);
+			for (uint k = 0; k < 4; ++k)
+			{
+				plane[k] = mat[k][3] + sign * mat[k][i];
+			}
+			plane.xyzw /= sqrt(dot(plane.xyz, plane.xyz));
+			if (dot(origin, plane.xyz) + plane.w + radius < 0)
+			{
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+void main()
+{
+	uint invoc_number = gl_GlobalInvocationID.x;
+	uint total_command_count = command_buffer_address.opaque_command_buffer_count + command_buffer_address.transparent_command_buffer_count;
+	if (invoc_number >= total_command_count) { return; }
+
+	uint instance_id = 0;
+	uint command_index = 0;
+	// Do not modify the value of firstInstance
+	if (invoc_number >= command_buffer_address.opaque_command_buffer_count) {  
+		command_index = invoc_number - command_buffer_address.opaque_command_buffer_count;
+		instance_id = command_buffer_address.transparent_command_buffer.commands[command_index].firstInstance;
+	} else {
+		command_index = invoc_number;
+		instance_id = command_buffer_address.opaque_command_buffer.commands[command_index].firstInstance;
+	}
+	
+
+	// get model matrix and mesh id
+	Model m = buffer_addresses.modelBufferDeviceAddress.models[instance_id];
+	mat4 modelMatrix = m.model;
+	uint meshIndex = m.mesh_index;
+
+	// get mesh data w/ mesh index
+	MeshData mesh = command_buffer_address.mesh_data_buffer.meshData[meshIndex];
+	vec3 position = mesh.position;
+	float radius = mesh.radius;
+
+	// transform position to clip space
+	position = vec3(modelMatrix * vec4(position, 1.0));
+
+	// check if in frustum
+	bool is_visible = check_is_visible(sceneData.viewproj, position, radius);
+	uint final_instance_count = is_visible ? 1 : 0;
+	// update instance count based on visibility
+	if (invoc_number >= command_buffer_address.opaque_command_buffer_count) {  
+		command_buffer_address.transparent_command_buffer.commands[command_index].instanceCount = final_instance_count;
+	} else {
+		command_buffer_address.opaque_command_buffer.commands[command_index].instanceCount = final_instance_count;
+	}
+}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In my implementation, each "instance" has a mesh index which points to some mesh data. With the model matrix from the instance and the bounding sphere from the sub-mesh data, it is fairly easy to check for visibility.
+My implementation also lumps both opaque and transparents together in the same compute shader pass. While it didn't make a big difference here, in a mesh with a large number of transparent sub-mesh instances, it may prove to be significantly efficient.
+
+A clever little thing about my implementation is how I retrieve the instance ID. Because of how the DrawIndirect is set up, each indirect call is associated with a single instance call, with each **`firstInstance`** property being unique. So I just
+get the instance ID from that property! Simple and easy to understand (with appropriate knowledge of my renderer's structure).
+
+
+
+
+
+
+
+
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>

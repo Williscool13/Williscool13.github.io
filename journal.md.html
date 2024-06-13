@@ -26,7 +26,7 @@ There were a couple of major problems with this that I couldn't accept.
  2. Not seen here is how the data is managed as a whole. In short, each sub-mesh in a model would create a new bunch of vertices in the Vertex data, further increasing storage costs through redundancy.
  
  Having duplicated data is great if you want small changes that may differ for each sub-mesh in the mesh, but in the majority of cases, creating these duplicates only reduces the amount of GPU memory you have to work with.
- Not far into working on this implementation, the ideas was scrapped.
+ Not far into working on this implementation, these ideas were scrapped.
  
  A big part of the change to the renderer is how the data is organized in the application. There is a whole new class that constructs the data to be more data-oriented, with almost no class representations of the 
  objects. Instead, the data is neatly laid out in arrays to be mapped directly into the GPU. This includes: Images (textures), Samplers, and Materials.
@@ -48,7 +48,7 @@ Eventually I had settled on 3 layers of granularity:
    - Texture and Sampler Indices
 - Per Instance 
    - Model Matrix
-   - Vertex Offset and Size
+   - Vertex Offset and Size (There is some data duplication here, but it is minimal)
 
 Each Mesh would combine the vertices of all sub-meshes into one large vertex buffer and keep track of the offsets and size of each mesh. Then when an instance is created, as specified by the node-based structure of the gltf file, it would store
 this offset and size. Additionally, each vertex would have the following properties:
