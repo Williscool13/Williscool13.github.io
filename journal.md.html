@@ -44,10 +44,10 @@ application. Frankly, my grasp on the underlying mathematics is not stellar. I c
 Diffuse irradiance is fairly simple. It is basically a cosine weighted convolution across the entire cubemap for each point on the surface. You take a fixed number of samples to determine the color of each point in the final image.
 This is a ridiculously expensive task, and can take several seconds if you choose a high (e.g. 1024) resolution for your diffuse map. Of course, time isn't a concern when working on pre-processing tasks, but slow is slow.
 
-Fortunately, the diffuse irradiance map is not significantly noisy or high frequency. You can get appreciable results at a very low resolution - 32x or 64x is perfectly fine. Which is why it can be beneficial to store the diffuse irradiance map 
+Fortunately, the diffuse irradiance map is not significantly noisy or high frequency. You can get appreciable results at a very low resolution - 8x, 16x, or 32x is perfectly fine. Which is why it can be beneficial to store the diffuse irradiance map 
 at one of the lower mip levels of the prefiltered specular mip chain. More on that later.
 
-Picture below is the same scene from above's diffuse irradiance map. The cubemap is on mip level 5 of the prefiltered specular map, which starts at 1024 (which means this diffuse map is 32x32). Not very helpful, but when this image is applied as a crude form
+Picture below is the same scene from above's diffuse irradiance map. The cubemap is on mip level 5 of the prefiltered specular map, which starts at 512 (which means this diffuse map is 16x16). Not very helpful, but when this image is applied as a crude form
 of global illumination on the pbr surfaces, it helps the objects blend in better. Images will come soon.
 
 ![Diffuse Irradiance Map](images/vulkan/diffuseMap.png)
@@ -61,7 +61,7 @@ however high you mip chain goes), the 1x1 image is a prefiltered specular with r
 This one took me longer to do, as I had to reconcile with the fact that in order to use a compute shader to draw on every mip level, I'd need to make an image view for every mip level. It might seem silly, "how else would you do it?", but I figured there
 must've been a way to do it by specifying the mip level in the imageStore function or something.
 
-For a base resolution of 1024x1024, the mip chain would be 10 levels long, with the 5th level dedicated to the diffuse irradiance map. This little bump in the mip chain forces me to implement trilinear filtering manually, rather than through the sampler.
+For a base resolution of 512x512, the mip chain would be 10 levels long, with the 5th level dedicated to the diffuse irradiance map. This little bump in the mip chain forces me to implement trilinear filtering manually, rather than through the sampler.
 Below are some examples of the results you can get when using specular pre-filtered maps. I am sure you are eagerly anticipating when the cubemaps can be seen on those smooth balls.
 
 ![Specular Prefiltered Map R: 0](images/vulkan/specZero.png)![Specular Prefiltered Map R: ~1.5](images/vulkan/specOneFive.png)![Specular Prefiltered Map R: 4](images/vulkan/specFour.png)
