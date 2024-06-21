@@ -64,7 +64,7 @@ must've been a way to do it by specifying the mip level in the imageStore functi
 For a base resolution of 512x512, the mip chain would be 10 levels long, with the 5th level dedicated to the diffuse irradiance map. This little bump in the mip chain forces me to implement trilinear filtering manually, rather than through the sampler.
 Below are some examples of the results you can get when using specular pre-filtered maps. I am sure you are eagerly anticipating when the cubemaps can be seen on those smooth balls.
 
-![Specular Prefiltered Map R: 0](images/vulkan/specZero.png)![Specular Prefiltered Map R: ~1.5](images/vulkan/specOneFive.png)![Specular Prefiltered Map R: 4](images/vulkan/specFour.png)
+![Specular Prefiltered Map R: 0](images/vulkan/specZero.png)![Specular Prefiltered Map R: ~1.5](images/vulkan/SpecOneFive.png)![Specular Prefiltered Map R: 4](images/vulkan/specFour.png)
 
 (####) **Part 3: BRDF LUT**
 
