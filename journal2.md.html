@@ -1,0 +1,196 @@
+<meta charset="utf-8" emacsmode="-*- markdown -*-"> <link rel="stylesheet" href="styles/journal.css">
+
+						**[Will's Journal](https://www.williscool.com)**
+
+
+**2025/04/04: Serialization, Terrain, and GTAO**
+=================================================================
+
+In this quarterly update of my activities, I'd like to share the numerous improvements to my game engine. Frankly a lot has changed since the last journal entry, but I don't really want to talk about every little detail that I worked on. So I'll stick with the 3 main topics in the title. But just to give you a picture of what the engine looks like now, here are some images.
+
+
+![Sponza](images/will_engine/20250404_sponza1.png)![Metallic Sphere](images/will_engine/20250404_metalsphere.png)![Editor Tools](images/will_engine/20250404_editortools.png)
+
+(###) **Serialization**
+
+One of the gripes I had with my engine so far was that any changes made to the game needed to be hard-coded in c++ and recompiled every time which is obviously unsustainable when authoring a scene. Between the compile time, the time to initialize resources, and scene traversal; it became very difficult to make minor visual changes. So I revamped the entire engine to be more modular through the use of interfaces, and improved reusability with new data structures such as Maps. 
+
+
+![Engine Overview](images/will_engine/20250404_willdiagram.png)
+
+
+I try my best to separate responsibility between the different parts of the engine to both maintain SOLID principles and prepare for the eventual move way from a single-thread to a multi-thread system. A change that I know will come with a lot of headaches and pain, but one I try to prepare for early on.
+
+The "Map" is the focus of the engine's serialization, as all of a scene's data is neatly packaged into the serialized representation of the map. This includes Metadata, Transforms, Components, and their accompanying properties. It wasn't a small amount of work, but I now have unique files associated with my program: `.willmap`, `.willmodel`, and `.willtexture`; but more on the renderer related types later.
+
+I decided that the data format itself should be in json as I'd like to be able to both read and modify it manually if I ever need to debug things. Certainly less secure, but there isn't really and critical data that needs protecting. Worst case is some data corruption...
+
+The data looks something like
+
+`````
+"gameObjects": {
+    "name": "sampleScene",
+    "transform": {
+        "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+        },
+        "rotation": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "w": 1.0
+        },
+        "scale": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 1.0
+        }
+    },
+    "components": {
+        "TerrainComponent": {
+            "terrain": {
+                "terrainGenerationProperties": {
+                    "scale": 150.54400634765625,
+                    "persistence": 0.24799999594688416,
+                    "lacunarity": 2.313999891281128,
+                    "octaves": 4,
+                    "offset": {
+                        "x": 0.0,
+                        "y": 0.0
+                    },
+                    "heightScale": 85.78099822998047
+                },
+                "terrainSeed": 111219222,
+                "terrainConfig": {
+                    "uvOffset": {
+                        "x": 0.0,
+                        "y": 0.0
+                    },
+                    "uvScale": {
+                        "x": 50.0,
+                        "y": 50.0
+                    },
+                    "baseColor": {
+                        "x": 0.8725489974021912,
+                        "y": 0.8725489974021912,
+                        "z": 0.8725489974021912,
+                        "w": 1.0
+                    }
+                },
+                "terrainProperties": {
+                    "slopeRockThreshold": 0.699999988079071,
+                    "slopeRockBlend": 0.5,
+                    "heightSandThreshold": 0.2800000011920929,
+                    "heightSandBlend": 0.10000000149011612,
+                    "heightGrassThreshold": 0.6499999761581421,
+                    "heightGrassBlend": 0.25,
+                    "minHeight": 5.0,
+                    "maxHeight": 75.0
+                },
+                "terrainTextures": [
+                    3813767237,
+                    219859308,
+                    3929634359,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                ]
+            },
+            "componentName": "Terrain Component"
+        }
+
+`````
+
+I mean I wouldn't call this readable... But it is certainly more readable than binary!
+
+I also had the problem of needing to store a persistent copy of the metadata for my render objects. I'm not going to elaborate on what exactly I mean by render objects because it is specific to my engine, but the metadata I needed was simply a name, path, and an ID. The ID needed to be persistent as I generate it using `std::hash` on the path to the .gltf file. Not entirely sure that's the best idea, but `std::hash` doesn't appear to be 100% consistent between hashing on different machines. Additionally the path will likely change between different downloads of the engine, so I can't generate the has at runtime.
+
+Fortunately, because it's just metadata, the contents of the entire model is fairly brief. Here is an example of the metadata for "mysphere.glb".
+
+``````
+{
+    "renderObject": {
+        "gltfPath": "assets\\models\\mySphere.glb",
+        "id": 3725271840,
+        "name": "mySphere"
+    },
+    "version": 1
+}
+``````
+
+But... If I want to import textures from other sources to use in place of the GLTF's texture, I'd need to also have some metadata representation of the textures. So I also made engine representations for those!
+
+``````
+{
+    "texture": {
+        "gltfPath": "assets\\textures\\brown_mud_leaves_01_diff_2k.jpg",
+        "id": 3813767237,
+        "name": "brown_mud_leaves_01_diff_2k",
+        "textureProperties": {
+            "mipmapped": true
+        }
+    },
+    "version": 1
+}
+``````
+
+Serialization does mean that I'd need to create serialization code for all future components and features, but that doesn't seem so bad! I did try to look into runtime reflection to make serialization/deserialization much simpler, but I couldn't find a good one that works with MSVC 17 (VS2022). And even if I did, apparently it adds a significant runtime overhead. If I were to implement it I'd need to create a separate application section just for editor stuff. Seems like more trouble than I'd prefer for my simple game engine.
+
+
+(###) **Terrain**
+
+Terrain is a big step for me. I actually started work on this project because I wanted to do the whole "Ghost of Tsushima" grass that was all the buzz about 6 months ago (maybe it was longer?). But I knew that I didn't want to half-ass it and sought to make full on game engine/renderer. Step-by-step I developed the engine and now I have reached a point where the terrain is a reasonable addition to the scene to make the engine a little more interesting. Though I have to say I don't really have a good understanding of what makes a good terrain system. 
+
+I've used terrain creators in Unity and Unreal, so I know that we want noise generation, a way to hand-author the terrain, and tools/configurations for textures. But to keep things simple for now, I just implemented a perlin noise terrain generator that procedurally textures based on their height in the world and their slope. This certainly could use some work, the blending in particular looks extremely amateur; but I think this is a solid enough start for what I need - which is a terrain base to procedurally generate grass on.
+
+![Terrain!](images/will_engine/20250404_terrain.png)
+
+I decided to only allow 1 terrain to exist per map, so if I want to do multiple maps, I'd just make a new map. Not super extendable right now, since the terrain is confined to world origin (and expands from there). Really, a lot could be done to make this more useful, but I'm building to me neeeds, and my need for terrain at the moment is just not very high.
+
+
+(###) **Ground Truth Ambient Occlusion**
+
+[Ground Truth Ambient Occlusion](https://www.activision.com/cdn/research/PracticalRealtimeStrategiesTRfinal.pdf) is a (relatively) recent implementation of ambient occlusion that is designed to be lightweight and fast on most machines, improving the illusion of full global illumination further. It involves a lot of complicated math to sample the surrounding of a surface to determine how occluded said surface is, reducing the contribution of light towards it if found. Importantly, GTAO is still a screen-space solution and as such is affected by many of the drawbacks associated with screen space solutions.
+
+For the unfamiliar:
+
+- Screen-Edge Artifacts: Where the sampling of the hemisphere cannot account for off-screen geometry, resulting in unoccluded surfaces
+- Resolution Dependency: The quality of the SSAO is dependent on the resolution of the image (depth buffer). More pixels means a higher fidelity of nearby surfaces when checking for occluders.
+- Performance Considerations: Integration is always difficult because it is (basically) impossible to sample every point along the sampled hemisphere. This problem isn't unique to SSAO.
+
+Some of these issues are improved by using temporal techniques common today. My engine already comes with temporal anti-aliasing, so I don't need to do additional steps to improve temporal consistency.
+
+Implementation-wise, GTAO is quite tricky; involving maths that frankly go right over my head. Fortunately, there is an implementation of it publicly available made by Intel in [XeGTAO](https://github.com/GameTechDev/XeGTAO). The code outlines the process of implementing GTAO very clearly, with pictures and explanations abound. However, the code is for DirectX and uses HLSL... I use Vulkan and GLSL. Not an impossible task, but certainly one that did not entice this programmer.
+
+After a couple weeks of torture, I had finished a GTAO implementation in game engine. Some profiling indicated that the AO takes about 1.0ms when using a render extent of 3840x2160, which is quite impressive! Perhaps it would be higher if my scene had a higher density, but for my simple game engine and sponza, it is quite an impressive result! 
+
+![Before GTAO](images/will_engine/20250404_aooff.png)![After GTAO](images/will_engine/20250404_aoon.png)
+
+Though, honestly it is quite subtle and unless I was looking for it I'm not sure I would notice. But it isn't a terribly expensive technique, and I still enjoyed the process of implementing a rendering technique in my game engine.
+
+(###) **Post Word**
+
+There are definitely some gripes I have with my engine so far. Shaders are fairly set in stone, and custom shaders are simply not supported in the engine; even for variations on the current deferred MRT pipeline. I would like to do some magic with Non-Photo Realistic (NPR) techniques in the future such as outlines, more solid colors, and shadow effects (e.g. cross-hatching). 
+
+Shadows are not in a good state right now, visibly jagged or otherwise affected by significant depth bias issues. I intend on looking into it a bit further but I haven't found it in me to return to shadows for now (figuring out CSMs the first time around was hell).
+
+Terrain is functional but is just kind of ugly to me. I added tessellation recently to improve the fidelity of the normals, but it still looks very plane. I may need to explore some normal, displacement, and parallax occlusion soon to further enhance the quality of the engine.
+
+Thanks for reading if you are reading. As always, I'm always happy to discuss engine/renderer related topics so feel free to contact me through email at twtw40@gmail.com or through discord `williscool`.
+
+(###) **Music**
+
+[Magdalena Bay - Imaginal Disk](https://open.spotify.com/album/4HTy9WFTYooRjE9giTmzAF?si=nij4BfKoQkObaGkauNGAJA)
+
+[Kula Shaker - Natural Magick](https://open.spotify.com/album/4atosprvgEOX83u0RVlQZq?si=IvxVwuEDRMOl59BgaP3vSA)
+
+[Jerry Cantrell - I Want Blood](https://open.spotify.com/album/1clodpcGPsGi0DAwIUHh8L?si=YB1i7Y04QIaSu90AmbdrrQ)
+
+[illuminati hotties - POWER](https://open.spotify.com/album/5YMMVf8CozIqS0IDOoqTAD?si=PFVSwEaDROe3TROtRYXWfQ)
+
+<style class="fallback">body{visibility:hidden}</style><script>markdeepOptions={tocStyle:'long'};</script>
+<!-- Markdeep: --><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js?" charset="utf-8"></script>
