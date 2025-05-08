@@ -1,9 +1,9 @@
 <meta charset="utf-8" emacsmode="-*- markdown -*-"> <link rel="stylesheet" href="styles/journal.css">
 
-						**[Will's Journal](https://www.williscool.com)**
+						**[Will's Journal](index.html)**
 						
 
-**2025/01/29: Physics, Shadows, and Refactor**
+**[2025/01/29: Physics, Shadows, and Refactor](index.html)**
 =================================================================
 
 (###) **Physics and Shadows**
@@ -121,7 +121,7 @@ Thing is… I had a long weekend coming up, I was somewhat unhappy with the stat
 P.S. I often put off finishing these journals because I have much more fun tinkering with the engine. So I just finished and uploaded this on 2025/02/16 even though the draft was pretty much finished on the initial date above (mostly the picture were a little annoying to get). This file is getting quite large so I plan for this to be my last journal entry in this document, maybe I'll use a different document every year - I think that makes sense.
 
 
-**2024/12/17: Temporal Antialiasing : Part 1**
+**[2024/12/17: Temporal Antialiasing : Part 1](index.html)**
 =================================================================
 
 Temporal Antialiasing, I hate(d) it, I (still) need it, and now it has finally been done*. Temporal antialiasing isn't super complicated, right? Just borrow the concept of Supersampling antialiasing (SSAA) - one of the oldest and most straightforward approaches to anti-aliasing, but instead of extra samples per pixel on the same frame, the samples are done over multiple frames. What could possibly go wrong?
@@ -153,7 +153,7 @@ This will require more work and maybe more exploration into what other people ar
 P.S. I ended up solving this and didn't end up writing a part 2, turns out the issues were primarily caused by me using a nearest sampler instead of linear. How silly.
 
 
-**2024/11/04: Deferred Rendering, Image Formats**
+**[2024/11/04: Deferred Rendering, Image Formats](index.html)**
 =================================================================
 
 Over the past 2 months I worked on my game engine a little bit during my free time and have recently finished implementing deferred rendering. Frankly it took far longer than it should have, in implementation and theory, deferred rendering isn't very complicated. Instead of resolving to the draw image in the fragment shaders, you pass all relevant data to a "resolve" shader through multiple render targets. I aptly named my passes: **MRT** and **Resolve**; the MRT uses the full vertex/fragment pipeline and the resolve uses a compute shader. I think these are fairly standard names and approaches to deferred rendering.
@@ -217,7 +217,7 @@ Email: twtw40@gmail.com
 
 And yes, I've been playing Factorio Space Age.
 
-**2024/09/16: 3 Months, New Engine, AMD issues**
+**[2024/09/16: 3 Months, New Engine, AMD issues](index.html)**
 =================================================================
 
 It has been a while since my last entry. What happened to me is not unlike what happens to most people who keep up a blog in their spare time. I got a job. It's a job in a local "indie" game development company which I started about 2 and a half months ago. This footprint is fairly clearly visible from my GitHub activity page.
@@ -309,7 +309,7 @@ Please feel free to suggest me albums!
 Email: twtw40@gmail.com
 
 
-**2024/06/25: Environment/PBR Mapping Results**
+**[2024/06/25: Environment/PBR Mapping Results](index.html)**
 =================================================================
 
 This journal entry is a continuation of the previous entry, where I have now finally implemented environment mapping which influences PBR shading. An environment map is an approximation of the incoming irradiance of the scene from extreme distances, which 
@@ -594,7 +594,7 @@ vec3 SpecularReflection(vec3 V, vec3 N, float roughness, vec3 F) {
 
 
 						
-**2024/06/21: Environment Mapping, PBR, Refactoring**
+**[2024/06/21: Environment Mapping, PBR, Refactoring](index.html)**
 =================================================================
 
 It has been a while since my last journal entry. I'd like to give an update on what I've been doing over the past 2 weeks and where I think I'll be headed in the next few. After implementing GPU-Driven Rendering, I had decided to look further into
@@ -781,7 +781,7 @@ This little requirement burned some time off development. Also, notable, 0.99 wi
 
 						
 						
-**2024/06/07: GPU-Driven Rendering, Frustum Culling**
+**[2024/06/07: GPU-Driven Rendering, Frustum Culling](index.html)**
 =================================================================
 
 (###) **GPU-Driven Rendering**
@@ -872,7 +872,7 @@ I'm planning to tackle cascaded shadow maps for a directional light. Though I am
 
 
 
-**2024/06/04: MSAA, Transparency/Cutoff, Shader Object**
+**[2024/06/04: MSAA, Transparency/Cutoff, Shader Object](index.html)**
 =================================================================
 
 I've pretty much finished VkGuide (pending optimization techniques) and have gone forth into the engine development world.
@@ -924,7 +924,7 @@ portion of the draw image. This is likely more efficient than constantly changin
 
 
 
-**2024/05/30: Remarks About Vulkan**
+**[2024/05/30: Remarks About Vulkan](index.html)**
 =================================================================
 
 It has been over week since I started VkGuide, and I am wired in on learning Vulkan. It is interesting to see how a modern
@@ -1060,7 +1060,7 @@ And I will finish this entry with a small diagram of a typical pipeline in vulka
 
 
 
-**2024/05/24: Vulkan Engine (VKGuide)**
+**[2024/05/24: Vulkan Engine (VKGuide)](index.html)**
 =================================================================
 	(##) **Vulkan API**
 	
@@ -1150,7 +1150,7 @@ And I will finish this entry with a small diagram of a typical pipeline in vulka
 	![Hello Triangle (Compute Shader)](images/vulkan/computeTriangle.png) ![Random Shader from ShaderToy](images/vulkan/computeStarry.png)
 	
 	
-**2024/04/30: Past activities**
+**[2024/04/30: Past activities](index.html)**
 =================================================================
 
 	(##) **Unity Shader Tutorials**
