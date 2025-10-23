@@ -1,0 +1,490 @@
+**Vulkan Descriptor Buffers (Redux)**
+    [William Gunawan](https://www.williscool.com)
+    Original Date 2025/10/23
+
+
+
+
+# Introduction
+
+Descriptor buffers offer an alternative method for providing descriptor sets to your pipeline, moving away from the traditional descriptor set bindings towards a more direct memory approach.
+Descriptor buffers, if used correctly, can reduce the frequency of descriptor binding operations, which is often one of the hottest paths in a renderer.
+As a result of this, descriptor buffers have reduced overhead and a CPU performance benefit, particularly in scenarios where descriptors change frequently or need to be dynamically updated.
+
+This is a rewrite of the article about descriptor buffers I wrote over a year ago.
+I've learned a lot since writing the first descriptor buffer article and reading it again, I can spot a lot of mistakes I made because I simply didn't fully understand how descriptor buffers worked.
+I have made good progress on my game engine and am now working on another iteration with a bigger focus on instancing/gpu-driven rendering. As you can guess, descriptor buffers play a large role in this.
+
+## API Changes and Requirements
+
+Descriptor buffers deprecate the following Vulkan features:
+
+ - vkCreateDescriptorPool
+ - vkAllocateDescriptorSets
+ - vkUpdateDescriptorSets
+ - vkCmdBindDescriptorSets
+
+Replacing it with the use of the following vulkan commands:
+
+ - vkGetDescriptorSetLayoutBindingOffsetEXT
+ - vkGetDescriptorSetLayoutSizeEXT
+ - vkGetDescriptorEXT
+ - vkCmdBindDescriptorBuffersEXT
+ - vkCmdSetDescriptorBufferOffsetsEXT
+
+
+Frankly I've been working with descriptor buffers for so long I don't even know what the standard descriptor functions do anymore.
+However, I do know that descriptor buffers still require the use of descriptor set layouts and pipeline layouts.
+
+To use descriptor buffers, your device needs to support the following:
+ - VK_EXT_descriptor_buffer (Extension)
+ - bufferDeviceAddress (from VkPhysicalDeviceVulkan12Features)
+
+Any relatively modern GPU should support both of these.
+
+This time, I'm going to cut to the chase and give you the main points.
+
+
+# The Anatomy of a Descriptor Buffer
+
+You can think of a descriptor buffer like an array of descriptor sets, defined in a buffer. When you want to draw something with a pipeline, you will bind one of these descriptor sets, not unlike how you would with `vkCmdBindDescriptorSets`.
+
+To use a descriptor buffer, you need to:
+
+1. Create the actual descriptor buffer.
+2. Assign descriptors to the descriptor sets.
+3. Bind the descriptor buffer and set offsets to select descriptor sets.
+4. Update descriptor bindings (when needed).
+
+
+## Create the actual descriptor buffer
+
+First, you will need a descriptor set layout, which will define the contents of the descriptor sets in your descriptor buffer.
+The descriptor set layout must be created with `VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT` as one of its flags.
+
+For the rest of this article, I will use the following descriptor set layout:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+DescriptorLayoutBuilder layoutBuilder;
+layoutBuilder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+layoutBuilder.add_binding(1, VK_DESCRIPTOR_TYPE_SAMPLER);
+layoutBuilder.add_binding(2, VK_DESCRIPTOR_TYPE_SAMPLER);
+layoutBuilder.add_binding(3, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+layoutBuilder.add_binding(4, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This maps to the following in GLSL:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+layout(set = 0, binding = 0) uniform  SceneData{
+    mat4 view;
+    mat4 proj;
+    mat4 viewproj;
+    // etc.
+} sceneData;
+
+layout(set = 0, binding = 1) uniform sampler colorS;
+layout(set = 0, binding = 2) uniform sampler metalS;
+layout(set = 0, binding = 3) uniform texture2D colorT;
+layout(set = 0, binding = 4) uniform texture2D metalT;
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+or to the following in Slang:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+struct SceneData {
+    float4x4 view;
+    float4x4 proj;
+    float4x4 viewproj;
+    // etc.
+}
+
+[[vk::binding(0, 0)]]
+ConstantBuffer<SceneData> sceneData;
+[[vk::binding(1, 0)]]
+SamplerState colorS;
+[[vk::binding(2, 0)]]
+SamplerState metalS;
+[[vk::binding(3, 0)]]
+Texture2D colorT;
+[[vk::binding(4, 0)]]
+Texture2D metalT;
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A descriptor buffer is still defined by an underlying VkBuffer, like so:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+struct AllocatedBuffer
+{
+    VulkanContext* context{nullptr};
+
+    VkBuffer handle{VK_NULL_HANDLE};
+    VkDeviceAddress address{0};
+    size_t size{0};
+
+    VmaAllocation allocation{VK_NULL_HANDLE};
+    VmaAllocationInfo allocationInfo{};
+}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Creating the descriptor buffer is similar to how you would create a normal VkBuffer.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+bufferInfo.pNext = nullptr;
+bufferInfo.size = descriptorSetSize * numberOfDescriptorSets;
+bufferInfo.usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+VmaAllocationCreateInfo vmaAllocInfo = {};
+vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+buffer = VkResources::CreateAllocatedBuffer(context, bufferInfo, vmaAllocInfo);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Note the 2 buffer usage bits.
+**VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT** is fairly self-explanatory; it's used to indicate that the VkBuffer will be used as a descriptor buffer.
+**VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT** allows us to retrieve the buffer's device address for binding later on.
+
+The only other unknown here is the `descriptorSetSize`, and obtaining that isn't as straightforward as it may seem.
+First, you retrieve the raw size of the descriptor set with `vkGetDescriptorSetLayoutSizeEXT`.
+
+However, you can't use this raw size directly. You must align it with:
+
+ - **VkPhysicalDeviceDescriptorBufferPropertiesEXT.descriptorBufferOffsetAlignment**
+
+This step is very important, and skipping it can lead to some very subtle bugs that are very hard to analyze. Here's how to get the aligned size
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+VkDeviceSize GetAlignedSize(VkDeviceSize value, VkDeviceSize alignment)
+{
+    return (value + alignment - 1) & ~(alignment - 1);
+}
+
+VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptorBufferProps; // = ... (retrieved elsewhere)
+VkDescriptorSetLayout descriptorSetLayout; // = ... (created elsewhere)
+VkDeviceSize descriptorSetSize;
+
+vkGetDescriptorSetLayoutSizeEXT(device, descriptorSetLayout, &descriptorSetSize);
+descriptorSetSize = GetAlignedSize(descriptorSetSize, descriptorBufferProps.descriptorBufferOffsetAlignment);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+To retrieve the descriptor buffer properties, you'll need to do this
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptorBufferProps{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT};
+VkPhysicalDeviceProperties2 deviceProperties{};
+deviceProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+deviceProperties.pNext = &descriptorBufferProps;
+vkGetPhysicalDeviceProperties2(physicalDevice, &deviceProperties);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+These properties stay the same for a given physical device during the lifetime of your application, so you should get it once when you initialize your physical device and keep 1 copy of it somewhere.
+
+You then multiply this final **descriptorSetSize** with the number of descriptor sets of this type you want this descriptor buffer to hold.
+The number you use here depends on what you intend to use the descriptor buffer for.
+
+For my use-cases, the number is typically 1 or the number of frames in flight my renderer runs on.
+For example, for a scene data buffer updated per-frame with 3 frames in flight: **numberOfDescriptorSets = 3**.
+Put all the steps above together, and we finally have a VkBuffer that we can use as a descriptor buffer.
+
+
+## Assign descriptors to the descriptor sets
+
+So imagine our descriptor buffer - the array of descriptor sets. Following the descriptor set layout above, let's say we have a VkBuffer (scene data buffer) that we want to assign to the first descriptor set. To do so, we will use this vulkan function **vkGetDescriptorEXT**. Used like so:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Example: Writing a uniform buffer to descriptor set 1, binding 0
+void WriteUniformDescriptor(VkDevice device, const AllocatedBuffer& uniformBuffer, int32_t descriptorSetIndex, int32_t descriptorBindingIndex, const VkPhysicalDeviceDescriptorBufferPropertiesEXT& descriptorBufferProps);
+
+// location = bufferAddress + setOffset + descriptorOffset
+size_t setOffset = descriptorSetIndex * descriptorSetSize;
+size_t bindingOffset;
+vkGetDescriptorSetLayoutBindingOffsetEXT(device, descriptorSetLayout, descriptorBindingIndex, &bindingOffset);
+
+// pMappedData is the CPU-mapped data of the buffer, specified when we create
+// the buffer with VMA (VMA_MEMORY_USAGE_CPU_TO_GPU)
+char* bindingPtr = static_cast<char*>(descriptorBuffer.allocationInfo.pMappedData) + setOffset + bindingOffset;
+VkDescriptorAddressInfoEXT descriptorAddressInfo = {};
+descriptorAddressInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
+descriptorAddressInfo.format = VK_FORMAT_UNDEFINED;
+descriptorAddressInfo.address = uniformBuffer.address;
+descriptorAddressInfo.range = uniformBuffer.size;
+
+VkDescriptorGetInfoEXT descriptorGetInfo{};
+descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
+descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+descriptorGetInfo.data.pUniformBuffer = &descriptorAddressInfo;
+
+size_t uniformBufferSize = descriptorBufferProps.uniformBufferDescriptorSize;
+vkGetDescriptorEXT(device, &descriptorGetInfo, uniformBufferSize, bindingPtr);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+It's a lot so lets take it line-by-line. We want to insert our VkBuffer (`uniformBuffer`) into descriptor set 1. First, we need to know where to write the descriptor. To do so, we will need to do some pointer arithmetic.
+Per the docs for [vkGetDescriptorSetLayoutBindingOffsetEXT](https://docs.vulkan.org/refpages/latest/refpages/source/vkGetDescriptorSetLayoutBindingOffsetEXT.html), the location follows this equation:
+
+        location = bufferAddress + setOffset + descriptorOffset + (arrayElement × descriptorSize)
+
+
+
+Since our uniform binding is not an array, we can ignore that last part (always 0).
+
+ 1. Since we want to add it to descriptor set 1, **setOffset = 1 * descriptorSetSize**.
+ 2. Then we want to find the offset of the specific binding. We call **vkGetDescriptorSetLayoutBindingOffsetEXT** on the descriptor set layout, specifying which binding we want.
+ 3. Finally, we calculate the final pointer by adding both offsets to the base address: `bindingPtr`.
+
+!!!! Why do we need to use **vkGetDescriptorSetLayoutBindingOffsetEXT**?
+    Quote from extension sample:
+
+    "We also need to fetch offsets of the descriptor bindings of a set layout as by the Vulkan specs size of the set layout is at least a sum of sizes of descriptor bindings of this layout but it can be higher than that and there are no guarantees about the layout of descriptor bindings in a descriptor set layout, meaning that first descriptor binding of a set can start exactly a the beginning of a set layout memory or it can start with non 0 offset if driver implementation puts some metadata there."
+
+
+At this point, there is a divergence in how we assign the different type of descriptors: Buffers vs Samplers/Images. To understand why, here is a quote from the vulkan blog post about descriptor buffers:
+
+> "Keeping VkImageView and VkSampler objects around is a compromise. Implementations still need to keep the older binding model working in the driver and completely rewriting that is not practical."
+
+To write a uniform buffer descriptor to the descriptor set, just do the above. Specify the uniform buffer's address and size, then with **uniformBufferDescriptorSize**, you do **vkGetDescriptorEXT**.
+
+Writing a sampler/image descriptor is different, but all you need is a different data structure.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+void WriteSampledImageDescriptor(VkDevice device, const VkDescriptorImageInfo& imageInfo, int32_t descriptorSetIndex, int32_t descriptorBindingIndex, const VkPhysicalDeviceDescriptorBufferPropertiesEXT& descriptorBufferProps);
+
+// ... same as uniform to get the `bindingPtr`
+
+// Note: For VK_DESCRIPTOR_TYPE_SAMPLER, use pSampler (only needs the VkSampler handle)
+// For VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE or VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+// use pSampledImage or pCombinedImageSampler (needs full VkDescriptorImageInfo)
+
+VkDescriptorGetInfoEXT descriptorGetInfo{};
+descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
+descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+descriptorGetInfo.data.pSampledImage = &imageInfo;
+
+const size_t sampledImageSize = descriptorBufferProps.sampledImageDescriptorSize;
+vkGetDescriptorEXT(device, &descriptorGetInfo, sampledImageSize, bindingPtr);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+## Bind the descriptor buffer and set offsets to select descriptor sets
+
+Finally, we get to use our descriptor buffer. I will pretend like we have another descriptor buffer to show you what it would look like with multiple descriptor buffers.
+One important detail is that your pipeline will need to be created with this flag **VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT**.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// ... Setting rendering attachment and clear colors...
+
+vkCmdBeginRendering(cmd, &renderInfo);
+vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderPipeline.handle);
+
+// ... Setting viewport and scissor
+
+// ... Setting push constant
+
+vkCmdPushConstants(cmd, renderPipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(MyPushConstant), &pushData);
+
+
+// Binding descriptor buffers
+VkDescriptorBufferBindingInfoEXT descriptorBufferBindingInfos[2];
+descriptorBufferBindingInfos[0].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
+descriptorBufferBindingInfos[0].pNext = nullptr;
+descriptorBufferBindingInfos[0].address = descriptorBuffer1.address;
+descriptorBufferBindingInfos[0].usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
+descriptorBufferBindingInfos[1].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
+descriptorBufferBindingInfos[1].pNext = nullptr;
+descriptorBufferBindingInfos[1].address = descriptorBuffer2.address;
+descriptorBufferBindingInfos[1].usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
+
+
+vkCmdBindDescriptorBuffersEXT(cmd, 2, descriptorBufferBindingInfos);
+
+// indices[0] = 0 means descriptorBuffer1 provides set 0
+// indices[1] = 1 means descriptorBuffer2 provides set 1
+uint32_t indices[2] = {0, 1};
+uint32_t offsets[2];
+offsets[0] = descriptorBuffer1.descriptorSetSize * 1; // Binding descriptor set at index 1 from both buffers
+offsets[1] = descriptorBuffer2.descriptorSetSize * 1;
+
+// 0 below is the "first set" in the shader. So for example if you're updating sets 1 and 2, you would use 1 instead of 0
+vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderPipelineLayout, 0, 2, indices, offsets);
+
+
+// ... Draw command
+const VkBuffer vertexBuffers[2] = {megaVertexBuffer.handle, megaVertexBuffer.handle};
+constexpr VkDeviceSize vertexOffsets[2] = {0, 0};
+vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, vertexOffsets);
+vkCmdBindIndexBuffer(cmd, megaIndexBuffer.handle, 0, VK_INDEX_TYPE_UINT32);
+vkCmdDraw(...)
+vkCmdEndRendering(cmd);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+It isn't terribly complicated. You bind the descriptor buffer with **vkCmdBindDescriptorBuffersEXT** and indicate which descriptor set you wish to use with **vkCmdSetDescriptorBufferOffsetsEXT**.
+**vkCmdBindDescriptorBuffersEXT** is typically called once per frame/pass (it persists between **vkCmdBindPipeline**, it is bound to the VkCommandBuffer), while **vkCmdSetDescriptorBufferOffsetsEXT** can be called frequently (per-draw) to swap descriptor sets
+
+
+## Update descriptor bindings (when needed)
+
+Modifying descriptors is different between uniform and sampler/image.
+
+Because uniform buffers are passed by address, to modify the contents of the buffer, you just need to modify the contents as you normally would. Either through a CPU-GPU mapping, or through a GPU-GPU copy operation from a staging buffer. However, if you want to change the address that is assigned to a descriptor set, you would call **WriteUniformDescriptor** (code example above). But instead of writing the uniform descriptor on an empty descriptor set, you are overwriting the descriptor set's contents. You do need to be mindful of synchronization requirements.
+
+Modifying sampler/image descriptors requires a different approach. Because you wrote to the descriptor set with a specific VkSampler and VkImageView handle, the only way to change the binding of a given descriptor set is to rewrite the descriptor by using **WriteSampledImageDescriptor** (code above) and its 3 other variants (Sampler, Combined, and Storage).
+
+## (Bonus) Descriptor Arrays for Bindless
+
+Descriptor arrays allow you to bind many resources at once and index into them dynamically. Create arrays by specifying descriptorCount > 1:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+layoutBuilder.AddBinding(0, VK_DESCRIPTOR_TYPE_SAMPLER, 1000);
+layoutBuilder.AddBinding(1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 10000);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Writing to a specific array index uses the full offset formula (as mentioned earlier):
+
+    _"location = bufferAddress + setOffset + descriptorOffset + (arrayElement × descriptorSize)"_
+
+To write to a specific index in the descriptor array, you would use the **vkGetDescriptorEXT** code from above, and offset it to the index you want.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+void WriteSamplerDescriptorArray(VkDevice device, const VkSampler sampler, int32_t descriptorSetIndex, int32_t descriptorBindingIndex, const VkPhysicalDeviceDescriptorBufferPropertiesEXT& descriptorBufferProps)
+// descriptorSetIndex = 0
+// descriptorBindingIndex = 0
+
+size_t setOffset = descriptorSetIndex * descriptorSetSize;
+size_t bindingOffset;
+vkGetDescriptorSetLayoutBindingOffsetEXT(device, descriptorSetLayout, descriptorBindingIndex, &bindingOffset);
+
+char* bindingPtr = static_cast<char*>(descriptorBuffer.allocationInfo.pMappedData) + setOffset + bindingOffset;
+
+const size_t samplerSize = descriptorBufferProps.samplerDescriptorSize;
+char* elementPtr = bindingPtr + (5 * samplerSize);
+
+VkDescriptorGetInfoEXT descriptorGetInfo{};
+descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
+descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_SAMPLER;
+descriptorGetInfo.data.pSampler = &sampler;
+
+vkGetDescriptorEXT(device, &descriptorGetInfo, samplerSize, elementPtr);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In the example above, we are writing the sampler to the 0th descriptor set, 0th binding, at index 5. To use it, you would bind it to your vkCommandBuffer as usual.
+For simplicity, our shader will access the descriptor buffer using an index provided through a push constant.
+
+An example fragment shader would look something like this. You would literally just index into the descriptor buffer.
+
+In GLSL:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+layout(push_constant) uniform PushConstants {
+    int samplerIndex;
+    int textureIndex;
+} pc;
+
+layout(set = 0, binding = 0) uniform sampler samplers[];
+layout(set = 0, binding = 1) uniform texture2D textures[];
+
+void main() {
+    color = texture(sampler2D(textures[pc.textureIndex], samplers[pc.samplerIndex]), uv);
+}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In Slang:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[[vk::binding(0, 0)]]
+SamplerState samplers[];
+[[vk::binding(1, 0)]]
+Texture2D textures[];
+
+struct PushConstants {
+    int samplerIndex;
+    int textureIndex;
+};
+
+[shader("fragment")]
+float4 fragmentMain(float2 uv : TEXCOORD0, uniform PushConstants pc) : SV_Target
+{
+    float4 color = textures[pc.textureIndex].Sample(samplers[pc.samplerIndex], uv);
+    return color;
+}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Some notes:
+ - The array is unbounded. Attempting to index out-of-bounds of the descriptor buffer array will result in a device lost/timeout.
+ - In my testing, accessing uninitialized descriptors returns black/zero values, though this is technically undefined behavior and may vary by driver.
+
+Be careful when indexing into descriptor buffers. If threads in a wave use different array indices (divergent access), you may see rendering artifacts.
+My experience with this bug actually indicates that this is only an issue on AMD cards. On Nvidia cards, I think the wavefront checks for divergent access implicitly.
+To fix this you will need to modify your shader code.
+
+In GLSL you'll need this extension and when sampling the buffer, you'll need to use a wrapper.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#extension GL_EXT_nonuniform_qualifier : require
+
+vec4 color = texture(textures[nonuniformEXT(index)], uv);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In Slang, afaik you don't need to explicitly mention it, but you can give a hint to the compiler with **NonUniformResourceIndex**.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+return textures[NonUniformResourceIndex(textureIndex)].Sample(samplers[0], uv);
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+But fair warning, enabling the use of nonuniform indexing is perhaps not the best idea.
+Doing so can have significant performance implications due to wave divergence.
+See this [discussion from Timothy Lottes](https://x.com/notimothylottes/status/1977029690931151024) for details on why uniform resource access within a draw call is preferable (especially for AMD cards).
+
+Beyond that, you will need some system or code to manage which descriptor array indices are used and which are free to allocate to, which is dependent on how your renderer is set up.
+
+# Final Thoughts
+
+Thanks for reading! Below are a few minor points that could help you when debugging your own descriptor buffers.
+
+## Cleanup
+
+When cleaning up your memory at the end of the program you only need to release the following:
+
+ - Descriptor Set Layouts (as you typically would)
+ - Uniform_Buffer VkBuffer (as you typically would)
+ - Images and Samplers (as you typically would)
+ - Descriptor Buffer's VkBuffer
+
+## Performance Advice
+
+I haven't done formal benchmarks comparing descriptor buffers to traditional descriptor pools, but for my use case (bindless rendering), descriptor buffers are essential regardless of raw performance numbers.
+
+To quote the [khronos blog](https://www.khronos.org/blog/vk-ext-descriptor-buffer):
+
+<blockquote>
+    "Changing the descriptor buffer bindings is highly discouraged, just like D3D12, but this depends on the implementation. Changing between descriptor sets and descriptor buffers between commands is also highly discouraged."
+
+    "Do not mix and match if possible. A good mental model is that changing the descriptor buffer might imply an ALL_COMMANDS - ALL_COMMANDS pipeline barrier. Push descriptors can still be used alongside descriptor buffers as a way to bridge the gap without the extra cost"
+</blockquote>
+
+Changing Descriptor Buffer Bindings is expensive/has synchronization implications.
+Don't use both Descriptor Sets and Descriptor Buffers in the same pipeline.
+The use of Push Descriptors is permitted.
+
+## Common Validation Errors
+
+There are a few common validation errors I ran into when changing from the traditional descriptor pool system to descriptor buffers.
+
+ - DescriptorSetLayout must be initialized with the flag **VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT**.
+ - The pipeline has to be initialized with the flag **VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT**.
+ - The order of set layouts in **VkPipelineLayoutCreateInfo.pSetLayouts** matters.
+ - Your application may throw errors if buffer sizes are not large enough/you attempt to **vkGetDescriptorEXT** outside your buffer range.
+
+## Errors with no Validation
+
+Some errors can occur with no validation errors that make it particularly difficult to debug.
+
+ - If you attempt to call **vkCmdSetDescriptorBufferOffsetsEXT** on a memory address that sits outside the currently bound descriptor buffer (with **vkCmdBindDescriptorBuffersEXT**), your application may quit with the “Device Lost” error. This crash comes with no other validation errors.
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
