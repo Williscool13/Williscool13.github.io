@@ -1,6 +1,90 @@
 <meta charset="utf-8" emacsmode="-*- markdown -*-"> <link rel="stylesheet" href="styles/journal.css">
 
-						**[Will's Journal](index.html)**
+						**[Will's Journal 2](index.html)**
+
+
+**[2025/10/31: Another Engine Attempt](index.html)**
+===
+
+
+Hello! It's been a few months now, more than I'd like. Unfortunately a few of those months were not productive at all, work has been exhausting and leaves little room for my personal project activities.
+Working from home has been a great boon, significantly reducing the time I spend at or travelling to work (no travel time is awesome). I'm trying once again to balance myself and get into the good programming again.
+
+Sad to say, I've partially abandoned my engine project. I see many flaws with it. Velocity is slow, because of how large the project is.
+The serialization requirements to set everything up became overwhelmingly laborious. The performance hasn't been an issue, but I have serious concerns about the engine stalling due to asset loading - everything is single-threaded.
+I find myself dreading the thought of implementing something in the engine, because of how many moving parts need to be addressed to get a new feature up and running.
+
+(###) **May and June**
+
+I did make some changes to the engine in the few weeks after my last post, but there were no new rendering features.
+For example, I had changed how I managed resources, to ensure that none are still alive if the application ends.
+Some may be of the opinion that this is silly, as it may hide some memory leaks/issues throughout the lifetime of the application. They are probably right, but I have other things to deal with for now.
+
+I added ktx file support for textures, which is great, but I mostly worked on learning the format and loading tools more than anything else.
+I'm moving deeper in the Khronos ecosystem, using Vulkan, gltf, and ktx. Ktx helps with pre-generating mipmaps and compression, both of which I'm not going to complain about.
+Most changes weren't huge, and I felt like I was spinning my wheels a bit on the progress of the engine. I felt awful that I wasn't using multi-threading.
+I felt bad that I was using gameobjects, using pointers for them, and that I was iterating over the scene graph recursively. Significantly hampering the cache coherency.
+<br>
+I want my engine to be focused on performance with a clear architecture. On both counts, I feel that I have failed tremendously.
+I knew that even if I had brought the engine to a reasonable state (actually it's current state seems reasonable to me!),
+I would very likely have to scrap it all anyway, because of how things would look vastly different when doing multithreading!
+
+I know that my renderer and game logic are deeply coupled, and uncoupling them would be such a monumental task, that making it anew would be as fast if not faster than just rewriting the whole thing.
+
+
+(###) **Three Months Later**
+
+So I sulked, for a few months, keeping busy by focusing on work. Slacking off post-work to play video games, like Elder Scrolls Online, F125, among others.
+All the while I felt nagging at the back of my head - "You should work on your engine. But the engine is bad! But just get back in there!". Very valid thoughts.
+
+So I came to the idea that when I do eventually focus back up (which I did), instead of diving straight into the new engine iteration, I would create a test bed.
+The test bed would be a project that is composed of several smaller subprojects. The subprojects would each explore features in isolation, maximizing velocity by improving iteration times.
+
+Flawless idea, and so far it's been going well. I've decided on a few key engine architectural points that I have been steadily exploring in this test bed. Among them are:
+ - Dedicated audio thread (SDL_Audio)
+ - Parallelization through a job system (enkiTS)
+ - Use ECS (enTT) instead of gameobjects+components
+ - Dedicated render thread
+ - Dedicated render resource loading thread, with a separate transfer queue
+ - Better crash handling/reporting and debugging
+ - Better logging and log tooling
+ - Better use of descriptor buffers
+ - Unified mega buffers (vertex, index, material, etc.)
+ - Actually use push constants (rather than avoiding out of stubornness)
+ - Use Slang instead of glsl/hlsl
+
+I have also be able to explore features that I knew would be a gigantic headache integrating into the main engine,
+namely skeletal rendering (joints/weights/etc.), actual audio (never got around to implementing audio in the engine).
+I also plan on tackling other features (not necessarily before starting on the engine) such as normal mapping,
+parallax occlusion mapping, a proper in-game UI, physics materials, and point lights. Handling static geometry is another thing that I think has a lot of potential
+(e.g. static shadows, static light maps, separate draw buffers/passes) but I know that one is probably one of the largest tasks to undertake - and may be a while before I begin tackling.
+
+The biggest change you may notice is the significant focus on multithreading. I'm tired of living in 2005, it is time I actually used all the cores available to me.
+Bit by bit, work on these systems began. Unfortunately, not all features are so ready to be isolated individually. For example, to work on Slang you need a renderer.
+To develop any renderer feature, you need a renderer.
+
+I've separated most categories into their own libraries:
+ - Core
+ - Render
+ - Physics
+ - Audio
+ - Utils
+
+Doing so has helped with code reuse considerably, and actually may prove to be useful starting points for the libraries in the actual engine!
+All of this work is still on-going at the moment, so I don't have much to share at the moment. Hopefully I can write another one of these before the year's end to give you an update on what's happening with the new engine.
+
+
+(###) **Music**
+
+As usual, I'll finish this entry off with a list of music that I've been listening to that I've found intesting.
+
+[MJ Lenderman - Manning Fireworks](https://open.spotify.com/album/1bKiiYGt1fzm9YMlTnUqpN?si=nGpE36YCQY2jAi28W_LOXA)
+
+[Being Dead - EELS](https://open.spotify.com/album/2gQOY7nW9BsZjdztVloaFT?si=IjxPul8SRwSz4ScInjKlRQ)
+
+[Camera Obscura - Look to the East, Look to the West](https://open.spotify.com/album/41ucHcr2Y1Bn0pmmgkLxPW?si=zXQGSOqUQv-tO6595_PPfQ)
+
+[Angelica Garcia - Gemelo](https://open.spotify.com/album/2t2d5CIyKqWF75rT2l6RsD?si=v24_kuCRRJyp3I2_8LG8AQ)
 
 
 
