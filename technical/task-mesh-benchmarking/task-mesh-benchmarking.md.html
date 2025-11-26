@@ -1,10 +1,18 @@
 **_GPU-Driven Rendering Performance: Traditional vs Mesh Shaders_**
-    **William Gunawan** - 22 November, 2025
+    **William Gunawan** - 26 November, 2025
 
 # Introduction
 
 This technical article is a benchmark comparison of traditional rendering pipelines against modern GPU-driven techniques: draw indirect, mesh shaders, and task shaders.
 The focus is on measuring the performance impact of moving culling decisions from CPU to GPU, and from per-instance to per-meshlet granularity.
+
+## Code Availability
+
+The code for this vulkan application is readily available at:
+ - https://github.com/Williscool13/MeshTaskBenchmark
+
+The profiler results and images used in this article are also readily available at:
+ - https://github.com/Williscool13/Williscool13.github.io/tree/main/technical/task-mesh-benchmarking
 
 ## Test Scene
 
@@ -76,9 +84,6 @@ This serves as the baseline - all geometry is processed every frame regardless o
 This configuration adds GPU-driven per-instance culling while keeping the traditional vertex pipeline.
 A compute shader performs frustum culling and writes draw commands for visible instances to an indirect buffer.
 
-
-### Compute Pass: Instance Culling
-
 The compute shader dispatches one thread per instance to evaluate visibility. Here, we only cull on an instance-level using frustum culling.
 
 ```````````````````cpp
@@ -140,8 +145,6 @@ While this simplifies indirect buffer generation (no batching logic needed),
 it doesn't leverage hardware instancing for identical geometry.
 A more optimized approach would batch identical models into single draws with instanceCount > 1.
 
-
-### Render Pass: Indirect Draw
 
 The GPU reads the culled draw commands without CPU involvement. We're going all-in on GPU-Driven Rendering:
 ```````````````````cpp
@@ -332,8 +335,6 @@ Additionally, instance data is written right next to the dispatch command, allow
 
 I'm particularly proud about this implementation :)
 
-### Compute Pass: Instance Culling
-
 
 ```````````````````
 public struct MeshIndirectDrawParameters {
@@ -390,7 +391,6 @@ void computeMain(uniform ComputePushConst pushConstants, uint3 dtid : SV_Dispatc
 }
 ```````````````````
 
-### Render Pass: Indirect Draw
 With some modification to the task shader to accommodate indirect
 ```````````````````
 [shader("task")]
@@ -479,11 +479,13 @@ Frame times were measured until the framerate generally stabilized at 2560x1440 
 
 # Discussion
 
-**Task and Mesh shaders provide massive gains with only meshlet-level culling**
+(###) **Task and Mesh shaders provide massive gains with only meshlet-level culling**
+
 - Task and Mesh achieves a 5.3x performance increase over traditional vertex pipeline
 - Processing 2,251 meshlets per instance vs full 72K vertex model
 
-**Instance-level culling shows mixed results**
+(###) **Instance-level culling shows mixed results**
+
 - Indirect + Traditional: 46% faster than baseline (74 FPS vs 51 FPS)
    - Traditional rendering processes every vertex regardless of visibility, so eliminating even a few instances provides measurable savings.
    - There is a considerable amount of waste in traditional rendering. Lots of backface rasterization, reasonably worse cache locality, and less control overall of the geometry pipeline.
@@ -496,23 +498,68 @@ They enable us to process each meshlet independently with tight locality.
 The finer granularity results in better GPU occupancy and aligns the graphics pipeline with modern GPU-driven rendering techniques.
 More importantly, it allows precise control over which parts of a mesh actually get rendered, eliminating wasted work before it reaches the rasterizer.
 
+## Profiler Analysis
+
+Cache behavior shows clear differences between traditional and mesh shader approaches:
+
+![Benchmark Overview](benchmarkOverview.png)
+
+![Traditional Cache](traditionalCache.png)
+
+![Traditional Indirect Cache](traditionalIndirectCache.png)
+
+![Meshlet Cache](meshCache.png)
+
+![Meshlet Indirect Cache](meshIndirectCache.png)
+
+(###) **L2 Cache Performance**
+
+- Traditional: 57.8% hit rate
+- Traditional Indirect: 57.4% hit rate
+- Mesh: 64.2% hit rate
+- Mesh Indirect: 63.9% hit rate
+
+(###) **Observations**
+
+Mesh shaders achieve ~11% better L2 cache hit rates.
+
+This improvement likely stems from processing meshlets as independent, tightly-packed units rather than strided vertex buffers across the entire model.
+
+Notably, adding indirect culling doesn't significantly hurt cache performance in either pipeline. The compute pass overhead is minimal compared to the rendering workload.
+
+(###) **L1 Cache Behavior**
+
+L1 cache hit rates are consistently low across all configurations (4-7%).
+This pattern appears in both this benchmark and my game engine, suggesting it may be related to the draw setup or memory access patterns.
+While this could affect absolute performance numbers, the relative comparison between pipelines remains valid.
 
 ## Limitations
 
 This benchmark favors mesh shaders due to the high vertex count (72K vertices per bunny). The 5.3x speedup reflects ideal conditions for meshlet-level culling.
 Other optimizations may also disproportionately improve the performance of traditional rendering techniques, further reducing the performance gap between the 2 approaches.
-Geometry LOD for example, could help with would likely help traditional rendering slightly more than it does meshlet rendering.
+Geometry LOD for example, would likely help traditional rendering slightly more than it does meshlet rendering.
 
-## Pratical Considerations
+### Practical Considerations
 
 Other factors that make traditional pipelines more appealing also need to be considered:
- - Much better support on older GPUs. Task+Mesh is only supported on NVIDIA Turing+ (RTX 2000+), AMD RDNA2+ (RX 6000+), and Intel Arc. Traditional pipelines work on any GPU from the past decade.
+ - Much better support on older GPUs. Task+Mesh is only supported on NVIDIA Turing+, AMD RDNA2+, and Intel Arc. Traditional pipelines work on any GPU from the past decade.
  - Simpler debugging and profiling. Mesh shader workloads can be harder to trace and analyze with standard GPU tools.
  - Traditional rendering is much more ubiquitous so learning material and general developer familiarity with them is high.
  - Task + Mesh shaders aren't universally beneficial. Low-poly meshes (< 1000 triangles) may not benefit from the added complexity, while high-density photogrammetry scans and CAD models see the largest gains.
 
+# Conclusion
 
-# Further Reading
+If you're planning on exploring modern rendering techniques for use in your game engine, you need to know the benefits and drawbacks of using them.
+Task and mesh shaders are great for scenes with high geometry complexity, but may not perform as well for simple scenes.
+Adoption rate is still low, requiring modern hardware from the user. [Vulkan GPU Info](https://vulkan.gpuinfo.org/listextensions.php) reports adoption rates at <10%, so there is still a way to go before this technique can be broadly used.
+If you plan on making a game engine or renderer with large reach, this technique may not be the right choice for you.
+
+With all this in mind, if these circumstances are right for you, use task and mesh shader! They're not that complicated.
+
+Thanks for reading! Feel free to contact me for fun talks about graphics and game engines :)
+
+(#) References
+
  - [NVIDIA - Introduction to Mesh Shaders](https://developer.nvidia.com/blog/introduction-turing-mesh-shaders/)
  - [AMD - Mesh Shader Guide](https://gpuopen.com/learn/mesh_shaders/mesh_shaders-from_vertex_shader_to_mesh_shader/).
  - [NVIDIA - Using Mesh Shaders For Professional Graphics](https://developer.nvidia.com/blog/using-mesh-shaders-for-professional-graphics/)
