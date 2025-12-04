@@ -1,0 +1,76 @@
+**_Task and Mesh Shaders: A Practical Guide (Slang)_**
+    [William Gunawan](https://www.williscool.com)
+    Written on 2025/12/04
+
+# Introduction
+
+Mesh shaders represent a fundamental shift in GPU rendering pipelines.
+Unlike traditional vertex shaders that process vertices individually, mesh shaders adopt a compute-like programming model with explicit thread dispatch and shared memory access.
+
+This article will demonstrate a practical task/mesh shader implementation in Vulkan with Slang, including:
+- Basic mesh shader pipelines (with and without task shaders)
+- GPU-driven frustum and meshlet backface culling
+- Integration with indirect draw workflows
+
+For a comprehensive explanation of the mesh shader model, refer to NVIDIA's [Introduction to Mesh Shaders](https://developer.nvidia.com/blog/introduction-turing-mesh-shaders/) and AMD's [Mesh Shader Guide](https://gpuopen.com/learn/mesh_shaders/mesh_shaders-from_vertex_shader_to_mesh_shader/).
+
+I also provide a small benchmark where I compare the performance of traditional rendering against task and mesh shaders.
+The most notable finding is that task and mesh shaders provide benefits in 2 ways: Improved cache hit rate during the draw calls and better culling granularity - reducing the number of vertices rasterized outright.
+It is available on [my website](../../technical/task-mesh-benchmarking/task-mesh-benchmarking.md.html).
+
+## Terminology
+
+**Task Shader / Amplification Shader**
+
+An optional pre-processing stage that determines which mesh shader workgroups to spawn. Performs coarse culling (e.g., per-meshlet frustum culling) before mesh shading.
+Typically dispatched with 32-128 threads per workgroup to evaluate multiple meshlets in parallel.
+While all threads can `DispatchMesh` for mesh shader workgroups, only one needs to do it after a group shared sync.
+Called "Amplification Shader" in DirectX 12.
+
+**Mesh Shader**
+
+Generates primitives and vertices for rasterization.
+Replaces the traditional vertex/geometry shader stages.
+Outputs a variable number of triangles per workgroup (up to hardware limits, varies by vendor but typically 256 vertices/256 triangles).
+Though mesh shaders are not limited to triangles (you can output other primitives), triangles will be the focus of this article.
+
+**Meshlet**
+
+A small cluster of vertices and triangles, typically 32-64 vertices and 64-124 triangles. See why in the tips section of this [article](https://developer.nvidia.com/blog/using-mesh-shaders-for-professional-graphics/).
+Meshlets are the atomic unit processed by mesh shaders, designed to fit within GPU shared memory and optimize cache locality.
+
+**Thread / Invocation**
+
+A single execution instance within a thread group.
+Threads within a thread group can cooperate via shared memory and barriers.
+
+**Thread Group / Workgroup**
+
+A collection of threads dispatched together, sharing local memory and synchronization primitives.
+In task shaders, one workgroup typically evaluates multiple meshlets (often one per thread) and emits mesh shader workgroups for visible ones.
+In mesh shaders, one workgroup processes exactly one meshlet.
+
+**Draw Indirect**
+
+A rendering technique where draw commands (vertex count, instance count, offsets) are read from GPU buffers rather than CPU-provided parameters, enabling GPU-driven culling without CPU synchronization.
+Draw indirect is also available for task/mesh dispatches through `vkCmdDrawMeshTasksIndirectEXT` and `vkCmdDrawMeshTasksIndirectCountEXT`.
+
+**Cone Culling / Meshlet Backface Culling**
+
+Conservative culling of meshlets whose cone normal indicates all contained triangles face away from the camera.
+Not to be confused with traditional per-triangle backface culling in the rasterizer, this operates at meshlet granularity in the task shaders to avoid processing invisible geometry entirely.
+
+
+# Data Preparation
+
+# Basic Mesh Shader Pipeline
+
+# Adding Task Shaders
+
+# Culling
+
+# Indirect Integration
+
+# Conclusion
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
