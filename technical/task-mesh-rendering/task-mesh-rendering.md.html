@@ -19,6 +19,8 @@ For performance comparisons and detailed profiling results, see my [task/mesh sh
 I assume familiarity with Vulkan basics: pipeline creation, descriptors, and buffer device addresses.
 Throughout this article, I access buffer data exclusively through BDAs without using samplers or textures.
 
+Source code available at https://github.com/Williscool13/TaskMeshRendering.
+
 ## Terminology
 
 **Task Shader / Amplification Shader**
@@ -172,7 +174,7 @@ The payload communicates data from task to mesh shader. While syntactically requ
 Since task shader threads may cooperatively populate the payload, it requires groupshared synchronization before dispatch.
 
 Payload size significantly impacts performance. [NVIDIA recommends](https://developer.nvidia.com/blog/using-mesh-shaders-for-professional-graphics/) keeping task shader outputs below 236 or 108 bytes, preferring compact data types (uint8_t, uint16_t) when possible.
-In my testing, reducing payload size from ~300 to ~160 bytes improved draw call time from 0.09ms to 0.06ms according to GPU profiler measurements, a 33% speedup.
+In my testing, reducing payload size from ~260+ to ~86 bytes improved draw call time from ~0.09ms to ~0.06ms according to GPU profiler measurements, a 33% speedup.
 
 As mentioned above, because of how trivial this example is, the task shader serves no real purpose. If the payload is unused, it is almost always better to just skip the task shader and directly dispatch the mesh shader.
 
@@ -196,9 +198,103 @@ The next section will explore these points.
 
 # Data Preparation
 
-In this section, we will discuss the process of generating meshlets for use in our task and mesh shaders. Data is just as important as our pipelines.
+Mesh shaders operate on meshlets rather than individual vertices. We use [meshoptimizer](https://github.com/zeux/meshoptimizer) to partition our mesh and generate the required data structures.
+For deeper explanation of meshlet theory and generation algorithms, see meshoptimizer's documentation.
 
-We will be using zeux's [Meshoptimizer](https://github.com/zeux/meshoptimizer), a well known library used to optimize various parts of the pipeline and one that provides tools to generate optimized meshlets for use in our task and mesh shaders.
+(##) Meshlet Generation
+
+The core function is `meshopt_buildMeshlets`, which takes vertex and index buffers and outputs three separate buffers:
+
+- **Meshlet Vertices** (uint32_t) - Indices into the vertex buffer
+- **Meshlet Triangles** (uint8_t) - Indices into meshlet vertices
+- **Meshlets** (meshopt_Meshlet) - Meshlet descriptors with culling metadata
+
+Note the indirection: `meshletTriangles` contains indices into `meshletVertices`, which contains indices into the original vertex buffer.
+
+When building meshlets, we specify maximum vertices and triangles per meshlet.
+I use 64 vertices and 64 triangles. [NVIDIA recommends](https://developer.nvidia.com/blog/using-mesh-shaders-for-professional-graphics/) 64 vertices with 84-124 primitives for optimal alignment, though these values depend on vertex attributes and shader outputs.
+
+``````````````````````
+// c++
+const size_t maxVertices = 64;
+const size_t maxTriangles = 64;
+
+size_t max_meshlets = meshopt_buildMeshletsBound(primitiveIndices.size(), maxVertices, maxTriangles);
+std::vector<\meshopt_Meshlet> meshlets(max_meshlets);
+std::vector<\unsigned int> meshletVertices(primitiveIndices.size());
+std::vector<\unsigned char> meshletTriangles(primitiveIndices.size());
+
+std::vector<\uint32_t> primitiveVertexPositions;
+meshlets.resize(meshopt_buildMeshlets(&meshlets[0], &meshletVertices[0], &meshletTriangles[0],
+                                      primitiveIndices.data(), primitiveIndices.size(),
+                                      reinterpret_cast<\const float*>(primitiveVertices.data()), primitiveVertices.size(), sizeof(Vertex),
+                                      maxVertices, maxTriangles, 0.f));
+
+``````````````````````
+For the Stanford Bunny (69,451 vertices), this produces 2,251 meshlets. Individual meshlets vary in size, not all contain the maximum 64 vertices or triangles.
+
+![Buffer indirection: meshlet triangles index into meshlet vertices, which index into the vertex buffer](MeshletGeneration.png)
+
+
+Before generating culling metadata, we optimize each meshlet for GPU cache locality:
+
+``````````````````````
+// c++
+// Reorder vertices and triangles within each meshlet for optimal GPU vertex cache utilization
+for (auto& meshlet : meshlets) {
+    meshopt_optimizeMeshlet(&meshletVertices[meshlet.vertex_offset], &meshletTriangles[meshlet.triangle_offset], meshlet.triangle_count, meshlet.vertex_count);
+}
+``````````````````````
+
+Finally, we generate culling metadata and package everything into our GPU-friendly struct. Meshoptimizer's `meshopt_computeMeshletBounds` provides the bounding sphere and cone data needed for culling:
+
+``````````````````````
+// c++
+struct Meshlet
+{
+    glm::vec4 meshletBoundingSphere;
+
+    glm::vec3 coneApex;
+    float coneCutoff;
+
+    glm::vec3 coneAxis;
+    uint32_t vertexOffset;
+
+    uint32_t meshletVerticesOffset;
+    uint32_t meshletTriangleOffset;
+    uint32_t meshletVerticesCount;
+    uint32_t meshletTriangleCount;
+    };
+
+// Generate bounds and extract into my meshlet data structure
+for (meshopt_Meshlet& meshlet : meshlets) {
+    meshopt_Bounds bounds = meshopt_computeMeshletBounds(
+        &meshletVertices[meshlet.vertex_offset],
+        &meshletTriangles[meshlet.triangle_offset],
+        meshlet.triangle_count,
+        reinterpret_cast<\const float*>(primitiveVertices.data()),
+        primitiveVertices.size(),
+        sizeof(Vertex)
+    );
+
+    meshletModel.meshlets.push_back({
+        .meshletBoundingSphere = glm::vec4(bounds.center[0], bounds.center[1], bounds.center[2],bounds.radius), // Frustum/Backface Culling
+        .coneApex = glm::vec3(bounds.cone_apex[0], bounds.cone_apex[1], bounds.cone_apex[2]), // Backface Culling
+        .coneCutoff = bounds.cone_cutoff, // Backface Culling
+
+        .coneAxis = glm::vec3(bounds.cone_axis[0], bounds.cone_axis[1], bounds.cone_axis[2]), // Backface Culling
+        .vertexOffset = vertexOffset,
+
+        .meshletVerticesOffset = meshletVertexOffset + meshlet.vertex_offset,
+        .meshletTriangleOffset = meshletTrianglesOffset + meshlet.triangle_offset,
+        .meshletVerticesCount = meshlet.vertex_count,
+        .meshletTriangleCount = meshlet.triangle_count,
+    });
+
+}
+``````````````````````
+
+The use of culling properties will be discussed later when culling is implemented in the task shader.
 
 # Basic Mesh Shader Pipeline
 
@@ -219,12 +315,6 @@ One common source of confusion is what a task/mesh shader should receive as inpu
 - Making use of the payload is optional, but in any non-trivial application it is often required.
 
 
-
-
-
-**Fragment Shader**
-
-- The fragment shader remains unchanged from the normal vertex/fragment pipeline, and in this codebase, all shaders will share the same fragment shader implementation for simplicity.
 
 
 
