@@ -8,15 +8,16 @@ Mesh shaders represent a fundamental shift in GPU rendering pipelines.
 Unlike traditional vertex shaders that process vertices individually, mesh shaders adopt a compute-like programming model with explicit thread dispatch and shared memory access.
 
 This article will demonstrate a practical task/mesh shader implementation in Vulkan with Slang, including:
-- Basic mesh shader pipelines (with and without task shaders)
-- GPU-driven frustum and meshlet backface culling
-- Integration with indirect draw workflows
+- Trivial Task + Mesh shader implementation (Sascha Willems' Sample)
+- Basic mesh shader pipeline
+- Task + Mesh shader with frustum and backface culling
 
 For a comprehensive explanation of the mesh shader model, refer to NVIDIA's [Introduction to Mesh Shaders](https://developer.nvidia.com/blog/introduction-turing-mesh-shaders/) and AMD's [Mesh Shader Guide](https://gpuopen.com/learn/mesh_shaders/mesh_shaders-from_vertex_shader_to_mesh_shader/).
 
-I also provide a small benchmark where I compare the performance of traditional rendering against task and mesh shaders.
-The most notable finding is that task and mesh shaders provide benefits in 2 ways: Improved cache hit rate during the draw calls and better culling granularity - reducing the number of vertices rasterized outright.
-It is available on [my website](../../technical/task-mesh-benchmarking/task-mesh-benchmarking.md.html).
+For performance comparisons and detailed profiling results, see my [task/mesh shader benchmark](../../technical/task-mesh-benchmarking/task-mesh-benchmarking.md.html), which demonstrates improved cache hit rates and finer culling granularity compared to traditional pipelines.
+
+I assume familiarity with Vulkan basics: pipeline creation, descriptors, and buffer device addresses.
+Throughout this article, I access buffer data exclusively through BDAs without using samplers or textures.
 
 ## Terminology
 
@@ -50,27 +51,188 @@ A collection of threads dispatched together, sharing local memory and synchroniz
 In task shaders, one workgroup typically evaluates multiple meshlets (often one per thread) and emits mesh shader workgroups for visible ones.
 In mesh shaders, one workgroup processes exactly one meshlet.
 
-**Draw Indirect**
-
-A rendering technique where draw commands (vertex count, instance count, offsets) are read from GPU buffers rather than CPU-provided parameters, enabling GPU-driven culling without CPU synchronization.
-Draw indirect is also available for task/mesh dispatches through `vkCmdDrawMeshTasksIndirectEXT` and `vkCmdDrawMeshTasksIndirectCountEXT`.
-
 **Cone Culling / Meshlet Backface Culling**
 
 Conservative culling of meshlets whose cone normal indicates all contained triangles face away from the camera.
 Not to be confused with traditional per-triangle backface culling in the rasterizer, this operates at meshlet granularity in the task shaders to avoid processing invisible geometry entirely.
 
 
+# Basic Task and Mesh Shader (Sascha Willems' Sample)
+
+We'll start with a basic task/mesh shader adapted from Sascha Willems' sample repository. This was where I first looked when implementing task/mesh shader in Vulkan.
+While it demonstrates minimum viable implementation, it lacks enough detail to truly understand task/mesh shader capabilities.
+
+I've adapted the shader a bit to fit my own code, but the general idea is still the same:
+
+``````````````````````
+// Slang
+import common;
+
+static const float4 positions[3] = {
+    float4( 0.0, -1.0, 0.0, 1.0),
+    float4(-1.0,  1.0, 0.0, 1.0),
+    float4( 1.0,  1.0, 0.0, 1.0)
+};
+
+
+struct VertexOutput
+{
+    float4 position : SV_Position;
+    float4 color : TEXCOORD0;
+};
+
+struct DummyPayLoad
+{
+    uint dummyData;
+};
+
+
+struct PushConstant {
+    float4x4 modelMatrix;
+    SceneData* sceneData;
+};
+
+[shader("task")]
+[numthreads(1, 1, 1)]
+void taskMain()
+{
+    DummyPayLoad localPayload;
+    DispatchMesh(3, 1, 1, localPayload);
+}
+
+
+[shader("mesh")]
+[outputtopology("triangle")]
+[numthreads(1, 1, 1)]
+void meshMain(out vertices VertexOutput vertices[3], out indices uint3 triangles[1],
+    uint3 DispatchThreadID : SV_DispatchThreadID, uint3 groupId : SV_GroupID,
+    uniform PushConstant pushConstant)
+{
+    float4x4 mvp = mul(pushConstant.sceneData.viewProj, pushConstant.modelMatrix);
+    uint meshletID = groupId.x;
+
+    // Hash-based per-meshlet coloring for visualization
+    uint hash = meshletID * 747796405u + 2891336453u;
+    float3 color = float3(
+        (hash & 0xFF) / 255.0,
+        ((hash >> 8) & 0xFF) / 255.0,
+        ((hash >> 16) & 0xFF) / 255.0
+    );
+
+    float4 offset = float4(0.0, 0.0, float(DispatchThreadID.x), 0.0);
+
+    SetMeshOutputCounts(3, 1);
+    for (uint i = 0; i < 3; i++) {
+        vertices[i].position = mul(mvp, positions[i] + offset);
+        vertices[i].color = float4(color, 1.0f);
+    }
+
+    triangles[0] = uint3(0, 1, 2);
+}
+
+[shader("fragment")]
+float4 fragmentMain(VertexOutput input)
+{
+    return input.color;
+}
+``````````````````````
+
+Let's take a look at the CPU code before further exploring the shader code.
+This example is meant to be called from the CPU with:
+``````````````````````
+vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
+``````````````````````
+Fairly simple, we are dispatching a single task shader group.
+The pipeline flow:
+
+Task Shader -> Mesh Shader -> Fragment Shader
+
+The dispatched task shader group is hardcoded to spawn 3 mesh shader groups, each processing one "meshlet" (in this case, a single triangle; real meshlets typically contain 32-64 vertices).
+However, this example is so trivial you could skip the task shader entirely and just call `vkCmdDrawMeshTasksEXT(cmd, 3, 1, 1)` directly (create the pipeline without a task shader).
+
+![Trivial Task/Mesh Shader](3Triangles.png)
+
+This sample is a good start to ensure that task and mesh shaders actually work in your renderer. It fills in a few basic questions like:
+- Does my device support Task/Mesh shaders?
+- Have I set up my pipeline to draw to my screen correctly?
+- Does my shader compilation work correctly for task and mesh shaders?
+
+It also answers some basic questions about how task and mesh shaders work together.
+
+**Task Shader**
+
+- Dispatches N mesh shader groups.
+- Only one thread should call DispatchMesh (typically thread 0 after a barrier). Or, all threads can call it with identical parameters (hardware will deduplicate)
+- The dispatch must include a payload, which should contain information for the mesh shader.
+
+The task shader dispatches the mesh shader groups with the command `DispatchMesh(x, y ,z, Payload p)`, which takes 4 parameters.
+X, Y, Z dispatch should be familiar to you as the standard compute-shader dispatch style.
+
+The payload communicates data from task to mesh shader. While syntactically required (and empty in this example), real applications typically use it to pass meshlet indices.
+Since task shader threads may cooperatively populate the payload, it requires groupshared synchronization before dispatch.
+
+Payload size significantly impacts performance. [NVIDIA recommends](https://developer.nvidia.com/blog/using-mesh-shaders-for-professional-graphics/) keeping task shader outputs below 236 or 108 bytes, preferring compact data types (uint8_t, uint16_t) when possible.
+In my testing, reducing payload size from ~300 to ~160 bytes improved draw call time from 0.09ms to 0.06ms according to GPU profiler measurements, a 33% speedup.
+
+As mentioned above, because of how trivial this example is, the task shader serves no real purpose. If the payload is unused, it is almost always better to just skip the task shader and directly dispatch the mesh shader.
+
+**Mesh Shader**
+
+- Each mesh shader group independently constructs a mini-vertex and mini-index buffer to be rasterized and sent to the fragment shader.
+- The mesh shader should indicate how many triangles and indices it intends on outputting. This is done with `SetMeshOutputCounts(vertices, triangles)`, and all threads in the mesh shader group must call SetMeshOutputCounts with identical values.
+
+
+Just to emphasize, each mesh shader group operates on 1 meshlet. This example uses 1 thread per group for simplicity, but production code typically uses 32-128 threads per task group and 32-128 threads per mesh group.
+So if a mesh shader has groupsize (32, 1, 1), each of those threads should help populate a single shared mini-vertex and mini-index buffer, that will be used to draw a single meshlet.
+
+![Single-Meshlet Processing in Task/Mesh Pipeline](SampleShaderFlow.png)
+
+For production use, we need:
+- Task shader performing actual work (culling, payload construction)
+- Clear payload usage patterns
+- Mesh shader demonstrating thread cooperation
+
+The next section will explore these points.
+
 # Data Preparation
+
+In this section, we will discuss the process of generating meshlets for use in our task and mesh shaders. Data is just as important as our pipelines.
+
+We will be using zeux's [Meshoptimizer](https://github.com/zeux/meshoptimizer), a well known library used to optimize various parts of the pipeline and one that provides tools to generate optimized meshlets for use in our task and mesh shaders.
 
 # Basic Mesh Shader Pipeline
 
-# Adding Task Shaders
+One common source of confusion is what a task/mesh shader should receive as input and what they should produce as output.
+
+**Task Shader**
+
+- Receives N meshlet indices as input (configured by programmer via group size)
+- Evaluates visibility for those N meshlets (frustum culling, backface culling)
+- Dispatches [0, N] mesh shader groups - one per visible meshlet
+- This dispatch should either be executed by a single thread or all threads should dispatch the same parameters. It is undefined behavior otherwise.
+
+
+**Mesh Shader**
+
+- Each mesh shader group takes 1 meshlet. Which meshlet it works on is for the programmer to work out, typically decided by the task shader and communicated through the payload.
+- The mesh shader group then produces a mini-vertex and mini-index buffer to be rasterized and sent to the fragment shader.
+- Making use of the payload is optional, but in any non-trivial application it is often required.
+
+
+
+
+
+**Fragment Shader**
+
+- The fragment shader remains unchanged from the normal vertex/fragment pipeline, and in this codebase, all shaders will share the same fragment shader implementation for simplicity.
+
+
+
+
+# Adding Task Shaders and Culling
 
 # Culling
 
-# Indirect Integration
-
 # Conclusion
 
-<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
+<!-- Markdeep: --><style class="fallback">body {visibility: hidden;white-space: pre;font-family: monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep || (document.body.style.visibility = "visible")</script>
