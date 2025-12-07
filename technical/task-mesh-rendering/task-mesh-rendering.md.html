@@ -1,6 +1,6 @@
 **_Task and Mesh Shaders: A Practical Guide (Slang)_**
     [William Gunawan](https://www.williscool.com)
-    Written on 2025/12/04
+    Written on 2025/12/07
 
 # Introduction
 
@@ -19,7 +19,7 @@ For performance comparisons and detailed profiling results, see my [task/mesh sh
 I assume familiarity with Vulkan basics: pipeline creation, descriptors, and buffer device addresses.
 Throughout this article, I access buffer data exclusively through BDAs without using samplers or textures.
 
-Source code available at https://github.com/Williscool13/TaskMeshRendering.
+Complete source code available on [GitHub](https://github.com/Williscool13/TaskMeshRendering).
 
 ## Terminology
 
@@ -53,20 +53,20 @@ A collection of threads dispatched together, sharing local memory and synchroniz
 In task shaders, one workgroup typically evaluates multiple meshlets (often one per thread) and emits mesh shader workgroups for visible ones.
 In mesh shaders, one workgroup processes exactly one meshlet.
 
-**Cone Culling / Meshlet Backface Culling**
+**Meshlet Backface Culling**
 
 Conservative culling of meshlets whose cone normal indicates all contained triangles face away from the camera.
-Not to be confused with traditional per-triangle backface culling in the rasterizer, this operates at meshlet granularity in the task shaders to avoid processing invisible geometry entirely.
+Not to be confused with traditional per-triangle backface culling in the rasterizer, this operates at meshlet granularity in the task shaders to avoid processing non-visible geometry entirely.
 
 
 # Basic Task and Mesh Shader (Sascha Willems' Sample)
 
 We'll start with a basic task/mesh shader adapted from Sascha Willems' sample repository. This was where I first looked when implementing task/mesh shader in Vulkan.
-While it demonstrates minimum viable implementation, it lacks enough detail to truly understand task/mesh shader capabilities.
+While it demonstrates a minimum viable implementation, it lacks enough detail to truly understand task/mesh shader capabilities.
 
 I've adapted the shader a bit to fit my own code, but the general idea is still the same:
 
-``````````````````````
+`````````````````````` cpp
 // Slang
 import common;
 
@@ -141,7 +141,8 @@ float4 fragmentMain(VertexOutput input)
 
 Let's take a look at the CPU code before further exploring the shader code.
 This example is meant to be called from the CPU with:
-``````````````````````
+`````````````````````` cpp
+// C++
 vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
 ``````````````````````
 Fairly simple, we are dispatching a single task shader group.
@@ -164,13 +165,13 @@ It also answers some basic questions about how task and mesh shaders work togeth
 **Task Shader**
 
 - Dispatches N mesh shader groups.
-- Only one thread should call DispatchMesh (typically thread 0 after a barrier). Or, all threads can call it with identical parameters (hardware will deduplicate)
+- Only one thread should call DispatchMesh (typically thread 0 after a barrier). Or, all threads can call it with identical parameters
 - The dispatch must include a payload, which should contain information for the mesh shader.
 
 The task shader dispatches the mesh shader groups with the command `DispatchMesh(x, y ,z, Payload p)`, which takes 4 parameters.
 X, Y, Z dispatch should be familiar to you as the standard compute-shader dispatch style.
 
-The payload communicates data from task to mesh shader. While syntactically required (and empty in this example), real applications typically use it to pass meshlet indices.
+The payload communicates data from task to mesh shader. It is syntactically required and empty in this example), but real applications typically use it to pass meshlet indices.
 Since task shader threads may cooperatively populate the payload, it requires groupshared synchronization before dispatch.
 
 Payload size significantly impacts performance. [NVIDIA recommends](https://developer.nvidia.com/blog/using-mesh-shaders-for-professional-graphics/) keeping task shader outputs below 236 or 108 bytes, preferring compact data types (uint8_t, uint16_t) when possible.
@@ -182,7 +183,6 @@ As mentioned above, because of how trivial this example is, the task shader serv
 
 - Each mesh shader group independently constructs a mini-vertex and mini-index buffer to be rasterized and sent to the fragment shader.
 - The mesh shader should indicate how many triangles and indices it intends on outputting. This is done with `SetMeshOutputCounts(vertices, triangles)`, and all threads in the mesh shader group must call SetMeshOutputCounts with identical values.
-
 
 Just to emphasize, each mesh shader group operates on 1 meshlet. This example uses 1 thread per group for simplicity, but production code typically uses 32-128 threads per task group and 32-128 threads per mesh group.
 So if a mesh shader has groupsize (32, 1, 1), each of those threads should help populate a single shared mini-vertex and mini-index buffer, that will be used to draw a single meshlet.
@@ -214,20 +214,20 @@ Note the indirection: `meshletTriangles` contains indices into `meshletVertices`
 When building meshlets, we specify maximum vertices and triangles per meshlet.
 I use 64 vertices and 64 triangles. [NVIDIA recommends](https://developer.nvidia.com/blog/using-mesh-shaders-for-professional-graphics/) 64 vertices with 84-124 primitives for optimal alignment, though these values depend on vertex attributes and shader outputs.
 
-``````````````````````
-// c++
+`````````````````````` cpp
+// C++
 const size_t maxVertices = 64;
 const size_t maxTriangles = 64;
 
 size_t max_meshlets = meshopt_buildMeshletsBound(primitiveIndices.size(), maxVertices, maxTriangles);
-std::vector<\meshopt_Meshlet> meshlets(max_meshlets);
-std::vector<\unsigned int> meshletVertices(primitiveIndices.size());
-std::vector<\unsigned char> meshletTriangles(primitiveIndices.size());
+std::vector<meshopt_Meshlet> meshlets(max_meshlets);
+std::vector<unsigned int> meshletVertices(primitiveIndices.size());
+std::vector<unsigned char> meshletTriangles(primitiveIndices.size());
 
-std::vector<\uint32_t> primitiveVertexPositions;
+std::vector<uint32_t> primitiveVertexPositions;
 meshlets.resize(meshopt_buildMeshlets(&meshlets[0], &meshletVertices[0], &meshletTriangles[0],
                                       primitiveIndices.data(), primitiveIndices.size(),
-                                      reinterpret_cast<\const float*>(primitiveVertices.data()), primitiveVertices.size(), sizeof(Vertex),
+                                      reinterpret_cast<const float*>(primitiveVertices.data()), primitiveVertices.size(), sizeof(Vertex),
                                       maxVertices, maxTriangles, 0.f));
 
 ``````````````````````
@@ -238,8 +238,8 @@ For the Stanford Bunny (69,451 vertices), this produces 2,251 meshlets. Individu
 
 Before generating culling metadata, we optimize each meshlet for GPU cache locality:
 
-``````````````````````
-// c++
+`````````````````````` cpp
+// C++
 // Reorder vertices and triangles within each meshlet for optimal GPU vertex cache utilization
 for (auto& meshlet : meshlets) {
     meshopt_optimizeMeshlet(&meshletVertices[meshlet.vertex_offset], &meshletTriangles[meshlet.triangle_offset], meshlet.triangle_count, meshlet.vertex_count);
@@ -248,8 +248,8 @@ for (auto& meshlet : meshlets) {
 
 Finally, we generate culling metadata and package everything into our GPU-friendly struct. Meshoptimizer's `meshopt_computeMeshletBounds` provides the bounding sphere and cone data needed for culling:
 
-``````````````````````
-// c++
+`````````````````````` cpp
+// C++
 struct Meshlet
 {
     glm::vec4 meshletBoundingSphere;
@@ -272,7 +272,7 @@ for (meshopt_Meshlet& meshlet : meshlets) {
         &meshletVertices[meshlet.vertex_offset],
         &meshletTriangles[meshlet.triangle_offset],
         meshlet.triangle_count,
-        reinterpret_cast<\const float*>(primitiveVertices.data()),
+        reinterpret_cast<const float*>(primitiveVertices.data()),
         primitiveVertices.size(),
         sizeof(Vertex)
     );
@@ -302,7 +302,8 @@ If a task shader performs no culling or meaningful preprocessing, it adds unnece
 
 Our mesh shader accesses all meshlet data through buffer device addresses in push constants:
 
-````````````````````````
+```````````````````````` cpp
+// Slang
 struct PushConstant {
     float4x4 modelMatrix;
 
@@ -317,7 +318,8 @@ struct PushConstant {
 A mesh shader *group* (not individual thread) processes one meshlet and outputs its vertices/triangles.
 Each thread within the group cooperates to populate the output buffers. In this example without task shaders, we use `SV_GroupID.x` to determine which meshlet to process.
 
-````````````````````````
+```````````````````````` cpp
+// Slang
 const static int32_t MESH_SHADER_DISPATCH_X = 32;
 const static uint MAX_VERTICES = 64;
 const static uint MAX_PRIMITIVES = 64;
@@ -387,7 +389,8 @@ The triangle loop will then simply forward the triangle indices from the meshlet
 
 We dispatch one mesh shader group per meshlet, which is 2,251 groups total for the Stanford Bunny:
 
-````````````````````````
+```````````````````````` cpp
+// Slang
 MeshOnlyPipelinePushConstant pushData{
     .modelMatrix = stanfordBunny.transform.GetMatrix(),
     .sceneData = currentSceneDataBuffer.address,
@@ -403,28 +406,170 @@ vkCmdDrawMeshTasksEXT(cmd, stanfordBunny.meshlets.size(), 1, 1);
 
 ![Mesh shader pipeline: CPU dispatch spawns groups, each outputs vertex/index data for rasterization](MeshOnly.png)
 
+![Mesh-only rendering: All 2,251 meshlets rendered with per-meshlet debug colors](MeshOnlyBunny.png)
+
 This works well, but still renders every meshlet regardless of visibility. This is where task shaders come in.
 
 # Adding Task Shaders and Culling
 
+Task shaders preprocess meshlets before spawning mesh shader groups, enabling GPU-driven culling without CPU involvement. Each task shader group evaluates multiple meshlets (64 in this implementation) and only dispatches mesh shaders for visible ones.
 
+(##) Task Shader Workflow
+
+The task shader performs two jobs:
+1. Cull invisible meshlets using frustum and backface tests
+2. Build a payload containing indices of visible meshlets for the mesh shader
+
+```````````````````````` cpp
+// Slang
+const static int32_t TASK_SHADER_DISPATCH_X = 64;
+
+struct MeshletPayload {
+    uint32_t groupMeshletOffset;  // Base meshlet index for this group
+    uint8_t meshletIndices[64];   // Worst case: all 64 meshlets visible, need all slots
+};
+
+groupshared MeshletPayload sharedPayload;
+groupshared Atomic<uint32_t> visibleMeshletCount;
+````````````````````````
+
+This payload uses 68 bytes by storing local offsets as uint8_t instead of full uint32_t indices, well under NVIDIA's 236-byte recommendation.
+
+![Task shader culling: 64 threads test meshlets in parallel, writing visible indices to shared memory. Only 3 mesh shader groups are spawned instead of 64.](TaskDispatchFlow.png)
+
+
+(##) Culling Implementation
+
+Each thread in the task shader evaluates one meshlet:
+
+```````````````````````` cpp
+// Slang
+[shader("task")]
+[numthreads(TASK_SHADER_DISPATCH_X, 1, 1)]
+void taskMain(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID,
+    uniform PushConstant pushConstant)
+{
+    uint32_t groupMeshletOffset = (gid.x * TASK_SHADER_DISPATCH_X);
+    uint32_t totalMeshlets = pushConstant.meshletCount;
+
+    // Initialize shared memory (thread 0 only)
+    if (gtid.x == 0) {
+        visibleMeshletCount.store(0);
+        sharedPayload.groupMeshletOffset = groupMeshletOffset;
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    // Handle partial groups (e.g., group 36 processes only 11 meshlets)
+    uint8_t threadMeshletOffset = (uint8_t)gtid.x;
+    uint groupMeshletCount = min(TASK_SHADER_DISPATCH_X, totalMeshlets - groupMeshletOffset);
+
+    if (threadMeshletOffset < groupMeshletCount) {
+        uint32_t meshletIndex = groupMeshletOffset + threadMeshletOffset;
+        Meshlet meshlet = pushConstant.meshletBuffer->meshlets[meshletIndex];
+
+        // Each thread tests one meshlet
+        bool visible = frustumCull(...) && backfaceCull(...);
+
+        if (visible) {
+            uint index = visibleMeshletCount.add(1);
+            sharedPayload.meshletIndices[index] = gtid.x;  // Local offset (≤64, fits in uint8_t)
+        }
+
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    // Thread 0 dispatches mesh shaders for visible meshlets only
+    if (gtid.x == 0) {
+        DispatchMesh(visibleMeshletCount.load(), 1, 1, sharedPayload);
+    }
+}
+````````````````````````
+
+| Thread | Meshlet Index | Frustum Test | Backface Test | Result                   |
+|--------|---------------|--------------|---------------|--------------------------|
+| 0      | 0             | Pass         | Pass          | Visible, payload[0] = 0  |
+| 1      | 1             | Fail         | -             | Culled                   |
+| 2      | 2             | Pass         | Fail          | Culled                   |
+| 3      | 3             | Pass         | Pass          | Visible, payload[1] = 3  |
+| ...    | ...           | ...          | ...           | ...                      |
+
+
+Note that threads populate the payload in parallel, so visible meshlets may not appear in sequential order, hence the use of an atomic counter to track the next available slot.
+
+Frustum Culling tests the meshlet's bounding sphere against all 6 frustum planes. If the sphere is outside any plane, the entire meshlet is culled.
+
+```````````````````````` cpp
+// Slang
+bool frustumVisible = true;
+for (uint i = 0; i < 6; i++) {
+    // Plane equation: dot(point, normal) + distance
+    // If sphere center is farther than -radius from plane, it's visible
+    float dist = dot(pushConstant.sceneData.frustum.planes[i].xyz, worldBounds.xyz) + pushConstant.sceneData.frustum.planes[i].w;
+    frustumVisible &= (dist >= -worldBounds.w);
+}
+````````````````````````
+
+Backface Culling uses meshoptimizer's cone data. The cone normal represents the average normal of all triangles in the meshlet. If the entire cone faces away from the camera, we cull the meshlet:
+
+```````````````````````` cpp
+// Slang
+// From meshoptimizer documentation - backface/cone culling formula
+// Transform cone axis to world space (model may be rotated/scaled)
+float3 worldConeAxis = normalize(mul((float3x3)pushConstant.modelMatrix, meshlet.coneAxis));
+float3 cameraToCenter = worldCenter - pushConstant.sceneData->cameraWorldPos.xyz;
+float cameraToCenterDist = length(cameraToCenter);
+bool backfaceVisible = dot(cameraToCenter, worldConeAxis) < meshlet.coneCutoff * cameraToCenterDist + meshlet.meshletBoundingSphere.w;
+````````````````````````
+
+(##) Mesh Shader Changes
+
+The mesh shader remains nearly identical to the mesh-only version. The key difference is receiving the payload to determine which meshlet to process:
+
+```````````````````````` cpp
+// Slang
+[shader("mesh")]
+void meshMain(in payload MeshletPayload sharedPayload, ...)
+{
+    // Payload contains only visible meshlet indices
+    uint meshletIdx = sharedPayload.groupMeshletOffset + sharedPayload.meshletIndices[groupId.x];
+
+    // Rest is identical to mesh-only version
+    Meshlet meshlet = pushConstant.meshletBuffer->meshlets[meshletIdx];
+    ...
+}
+````````````````````````
+
+(##) CPU Dispatch
+
+```````````````````````` cpp
+// C++
+vkCmdPushConstants(...);
+uint32_t taskGroupCount = (meshletCount + 63) / 64;
+vkCmdDrawMeshTasksEXT(cmd, taskGroupCount, 1, 1);
+````````````````````````
+
+We dispatch one task shader group per 64 meshlets. For the Stanford Bunny (2,251 meshlets), this is 36 task shader groups. Each group culls its assigned meshlets and spawns only the necessary mesh shader groups.
+
+![CPU command spawns 36 task shader groups to process all 2,251 meshlets. Each group culls its assigned meshlets and spawns variable numbers of mesh shader groups based on visibility. The rasterizer receives only the visible geometry.](TaskMeshOverview.png)
+
+For a static camera view of the Stanford Bunny, frustum and backface culling typically eliminates 40-60% of meshlets, reducing vertex processing and rasterization workload significantly.
+
+![Task+Mesh shader rendering with culling: 1,174 of 2,251 meshlets rendered (1,077 backface culled)](TaskMeshCulling.png)
+
+![Culling from profile view - missing meshlets on the back side show backface culling in action](CullingFromAnotherPerspective.png)
 
 # Conclusion
 
+This article demonstrated a practical task and mesh shader implementation in Vulkan, progressing from a minimal example to a production-ready pipeline with GPU-driven culling.
 
-One common source of confusion is what a task/mesh shader should receive as input and what they should produce as output.
+Task shaders enable meshlet-level frustum and backface culling entirely on the GPU. For the Stanford Bunny test scene, this approach typically culls 40-60% of meshlets before vertex processing, significantly reducing rasterization workload.
 
-**Task Shader**
+Complete source code with build instructions is available on [GitHub](https://github.com/Williscool13/TaskMeshRendering).
 
-- Receives N meshlet indices as input (configured by programmer via group size)
-- Evaluates visibility for those N meshlets (frustum culling, backface culling)
-- Dispatches [0, N] mesh shader groups - one per visible meshlet
-- This dispatch should either be executed by a single thread or all threads should dispatch the same parameters. It is undefined behavior otherwise.
+For further exploration, consider combining task/mesh shaders with indirect draws for fully GPU-driven rendering, or extending the culling system with occlusion queries.
 
-
-**Mesh Shader**
-
-- Each mesh shader group takes 1 meshlet. Which meshlet it works on is for the programmer to work out, typically decided by the task shader and communicated through the payload.
--
+Thanks for reading!
 
 <!-- Markdeep: --><style class="fallback">body {visibility: hidden;white-space: pre;font-family: monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep || (document.body.style.visibility = "visible")</script>
