@@ -298,6 +298,120 @@ The use of culling properties will be discussed later when culling is implemente
 
 # Basic Mesh Shader Pipeline
 
+If a task shader performs no culling or meaningful preprocessing, it adds unnecessary overhead. This section demonstrates mesh shaders in isolation, we'll add task shader culling in the next section.
+
+Our mesh shader accesses all meshlet data through buffer device addresses in push constants:
+
+````````````````````````
+struct PushConstant {
+    float4x4 modelMatrix;
+
+    SceneData* sceneData;
+    VertexData* vertexBuffer;
+    MeshletVerticesData* meshletVerticesBuffer;
+    MeshletTrianglesData* meshletTrianglesBuffer;
+    MeshletData* meshletBuffer;
+};
+````````````````````````
+
+A mesh shader *group* (not individual thread) processes one meshlet and outputs its vertices/triangles.
+Each thread within the group cooperates to populate the output buffers. In this example without task shaders, we use `SV_GroupID.x` to determine which meshlet to process.
+
+````````````````````````
+const static int32_t MESH_SHADER_DISPATCH_X = 32;
+const static uint MAX_VERTICES = 64;
+const static uint MAX_PRIMITIVES = 64;
+
+[shader("mesh")]
+[outputtopology("triangle")]
+[numthreads(MESH_SHADER_DISPATCH_X, 1, 1)]
+void meshMain(
+    out indices uint3 triangles[MAX_PRIMITIVES], out vertices VertexOutput vertices[MAX_VERTICES],
+    uint3 groupId : SV_GroupID, uint3 gtid : SV_GroupThreadID,
+    uniform PushConstant pushConstant)
+{
+    uint meshletIdx = groupId.x;
+
+    Meshlet meshlet = pushConstant.meshletBuffer->meshlets[meshletIdx];
+    float4x4 viewProj = pushConstant.sceneData->viewProj;
+
+    uint hash = meshletIdx * 747796405u + 2891336453u;
+    float3 color = float3(
+        (hash & 0xFF) / 255.0,
+        ((hash >> 8) & 0xFF) / 255.0,
+        ((hash >> 16) & 0xFF) / 255.0
+    );
+
+    SetMeshOutputCounts(meshlet.meshletVerticesCount, meshlet.meshletTriangleCount);
+    uint32_t instanceIndex = gtid.x;
+    for (uint i = instanceIndex; i < meshlet.meshletVerticesCount; i += MESH_SHADER_DISPATCH_X) {
+        uint localVertexIndex = pushConstant.meshletVerticesBuffer->meshletVertices[meshlet.meshletVerticesOffset + i].vertexIndex;
+        Vertex v = pushConstant.vertexBuffer->vertices[meshlet.vertexOffset + localVertexIndex];
+
+        float4 worldPos = mul(pushConstant.modelMatrix, float4(v.position, 1.0));
+        float4 clipPos = mul(viewProj, worldPos);
+
+        vertices[i].position = clipPos;
+        vertices[i].color = float4(color, 1.0);
+    }
+
+    for (uint i = instanceIndex; i < meshlet.meshletTriangleCount; i += MESH_SHADER_DISPATCH_X) {
+        uint triOffset = meshlet.meshletTriangleOffset + i * 3;
+
+        uint idx0 = pushConstant.meshletTrianglesBuffer->meshletTriangles[triOffset + 0].triangleIndex;
+        uint idx1 = pushConstant.meshletTrianglesBuffer->meshletTriangles[triOffset + 1].triangleIndex;
+        uint idx2 = pushConstant.meshletTrianglesBuffer->meshletTriangles[triOffset + 2].triangleIndex;
+
+        triangles[i] = uint3(idx0, idx1, idx2);
+    }
+}
+````````````````````````
+The fragment shader simply outputs the interpolated color (omitted for brevity).
+
+In the shader code, each thread in a group specifies that the work group will be outputting `meshletVerticesCount` vertices and `meshletTriangleCount` indices. Then each thread works to populate the mini-buffers.
+
+With 32 threads per group but up to 64 vertices per meshlet, threads use a strided pattern where each thread processes multiple vertices:
+
+| Thread | Iteration 0 | Iteration 1 |
+|--------|-------------|-------------|
+| 0      | v0          | v32         |
+| 1      | v1          | v33         |
+| 2      | v2          | v34         |
+| ...    | ...         | ...         |
+| 31     | v31         | v63         |
+
+
+The vertex loop first fetches the vertex indirection index from the meshlet vertex buffer, and uses that to index into the real vertex buffer. The resulting vertex is then processed into the output mini-vertex buffer like a normal vertex shader would.
+
+The triangle loop will then simply forward the triangle indices from the meshlet buffer, fairly straightforward.
+
+We dispatch one mesh shader group per meshlet, which is 2,251 groups total for the Stanford Bunny:
+
+````````````````````````
+MeshOnlyPipelinePushConstant pushData{
+    .modelMatrix = stanfordBunny.transform.GetMatrix(),
+    .sceneData = currentSceneDataBuffer.address,
+    .vertexBuffer = vertexBuffer.address,
+    .meshletVerticesBuffer = meshletVerticesBuffer.address,
+    .meshletTrianglesBuffer = meshletTrianglesBuffer.address,
+    .meshletBuffer = meshletBuffer.address,
+};
+
+vkCmdPushConstants(cmd, meshOnlyPipeline.pipelineLayout.handle, VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(MeshOnlyPipelinePushConstant), &pushData);
+vkCmdDrawMeshTasksEXT(cmd, stanfordBunny.meshlets.size(), 1, 1);
+````````````````````````
+
+![Mesh shader pipeline: CPU dispatch spawns groups, each outputs vertex/index data for rasterization](MeshOnly.png)
+
+This works well, but still renders every meshlet regardless of visibility. This is where task shaders come in.
+
+# Adding Task Shaders and Culling
+
+
+
+# Conclusion
+
+
 One common source of confusion is what a task/mesh shader should receive as input and what they should produce as output.
 
 **Task Shader**
@@ -311,18 +425,6 @@ One common source of confusion is what a task/mesh shader should receive as inpu
 **Mesh Shader**
 
 - Each mesh shader group takes 1 meshlet. Which meshlet it works on is for the programmer to work out, typically decided by the task shader and communicated through the payload.
-- The mesh shader group then produces a mini-vertex and mini-index buffer to be rasterized and sent to the fragment shader.
-- Making use of the payload is optional, but in any non-trivial application it is often required.
-
-
-
-
-
-
-# Adding Task Shaders and Culling
-
-# Culling
-
-# Conclusion
+-
 
 <!-- Markdeep: --><style class="fallback">body {visibility: hidden;white-space: pre;font-family: monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep || (document.body.style.visibility = "visible")</script>
