@@ -1,0 +1,127 @@
+<meta charset="utf-8" emacsmode="-*- markdown -*-">
+<meta name="description" content="Will's journal entry from April 2024 — documenting early graphics programming activities including Unity shader tutorials, toon shading, and studying Real-Time Rendering 4th Edition.">
+
+    **[Will's Journal](../index.html)**
+
+
+(#) **2024/04/30: Past activities**
+
+	(##) **Unity Shader Tutorials**
+	
+	I began by following tutorials about rendering techniques, 
+	particularly from [NedMakesGames](https://www.youtube.com/@NedMakesGames) 
+	and [Ben Cloward](https://www.youtube.com/channel/UCoG9TB1eL6dm9eNbLFueHBQ).
+	I had an interest in toon shaders, as it provided an alternative to 
+	photo-realistic rendering. Producing images at both a lower cost and
+	at reduced complexity. 
+	As it turns out, toon shading can be reasonably complex to implement,
+	especially since Unity doesn't come with one of the box, requiring users to write
+	their own implementations with the rendering pipeline.
+	As a beginner with little knowledge on the rendering pipeline, this was a 
+	daunting task, which resulted in me doing little more than copying what
+	the tutorial had outlined. 
+	
+	But copying, simply wasn't good enough for me. 
+	While both Ned and Ben's tutorials were instrumental in producing the toon shading I wanted, my knowledge was lacking and I knew it.
+	I don't enjoy just doing, I enjoy knowing. And to know, will require much more than brief condensed tutorials on youtube. 
+	So I decided to embark on a journey to deepen my knowledge.
+	
+	
+	(##) **Real-Time Rendering, 4th Edition**
+	
+	This led me to the highly recommended book: [Real-Time Rendering](https://www.realtimerendering.com/index.html).
+	It was long, and it took me many months to read it front to back. Perhaps it wasn't the best idea to jump right into it
+	without studying graphics programming basics a little more. Nonetheless, it was a solid read and I had grasped the information
+	that I needed to have a general understanding of graphics programming. 
+	
+	Truthfully, some of the chapters were a slog to get through. I read them anyway and have come out with a better understanding
+	of what inherently piques my interest. Some noteworthy chapters that I find less interesting include: 
+	- Volume Rendering 
+	- Curves
+	- Graphics Hardware
+	
+	I think that's good news! It means that I find just about everything else that's important interesting.
+	
+	Some chapters that I find particularly interesting include:
+	- Shadows
+	- Physically Based Shading
+	- Non-Photorealistic Rendering
+	
+	
+	The only problem with reading this lengthy book is that I had come out of it with knowledge, but no produced works.
+	What good is knowing what you know, if you don't use it for some purpose? 
+	
+	(##) **CS6610 - Interactive Computer Graphics by Cem Yuksel**
+	
+	A name that frequently comes up in a lot of places, Cem Yuksel has a notable presence in the Computer Graphics scene. 
+	[His course](https://graphics.cs.utah.edu/courses/cs6610/spring2021/) was recommended on the Real-Time Rendering resource page and gives an introduction to rendering in realtime using OpenGL.
+	
+	I did this module alongside reading the book and had completed every single one of the projects outlined on the course website.
+	The techniques that were required to be implemented we not significantly complex, but as a beginner it was somewhat difficult to get used to.
+	
+	I wouldn't assume anyone would want to look at code written to complete the minimum requirements of the project, but it is [publicly available](https://github.com/Williscool13/LearnOpenGL).
+	
+	Techniques implemented include:
+	- Texturing
+	- Reflections (Not Real)
+	- Environment Mapping
+	- Shadow Mapping
+	- Displacement Mapping
+	- Tessellation 
+	
+	And here are some pictures:
+	![Reflections and Environment Mapping](images/reflections.png)![Directional Light](images/directionalLight.png)![Point Light on Normal Mapped Plane](images/pointHeight.png)![Tessellated Vertex Displacement](images/tessellatedVertexDisplacement.png)
+	
+	(##) **Ray Tracing In a Weekend and The Next Week**
+	
+	Briefly after finishing Real-Time Rendering, I had decided to look into alternative rendering techniques, specifically ray tracing.
+	Ray tracing is a big field of study right now, both in real-time and offline. And while it is slightly more suited
+	to offline rendering at the moment, its significantly impressive results make it very tempting to incorporate into 
+	real-time rendering. 
+	
+	Both courses can be found below:
+		
+	[_Ray Tracing in One Weekend_](https://raytracing.github.io/books/RayTracingInOneWeekend.html)
+	
+	[_Ray Tracing: The Next Week_](https://raytracing.github.io/books/RayTracingTheNextWeek.html)
+	
+	This is my most recent activity as of writing. I'm not a particularly artistic person, nor do I enjoy constructing scenes
+	to look interesting. So I followed the ray tracing courses closely, and did not significantly modify the scenes.
+	Here are a few piectures of the renders:
+	
+	![Final Render of "In a Weekend"](images/RT1WE_final.png)![Perlin Noise](images/perlin.png)![Simple Lights](images/simpleLight.png)
+	
+	![Cornell Box](images/cornellBox.png)
+	
+	My code does look slightly different from the version available on their github. 
+	For one, i use stb_image to write the resulting image to a png file. 
+	Another change I made is to use templates for vectors and other classes. But I quickly stopped using them,
+	as I realized I would never use this code again and I'm writing code that will simply never be used.
+	
+	The final render of Ray Tracing: The Next Week is being rendered at the moment, so that'll have to wait.
+	
+	(##) **What's Next?**
+	
+	As I stand now, I am at a crossroads, with the potential to do anything I want. I know that I would like to create my own game engine. 
+	But I don't feel equipped to make it yet. But truthfully, how often do you feel prepared when embarking on a difficult task?
+	This choice paralysis is stopping me dead in my tracks, as I am unsure of myself and the steps I need to take to continue my Graphics Programming journey.
+	I will end this journal entry with a set of points that I wish to complete over the coming months:
+	
+	- Learn Vulkan
+	- Read [Game Engine Architecture](https://www.gameenginebook.com/)
+	- Write my own Game Engine
+	- Do Ray Tracing in Real-Time
+	
+	As for my professional plans in the near future, I will soon be moving to Canada to take a 
+	[Graduate Certificate in Game Programming](https://www.sheridancollege.ca/programs/game-development-advanced-programming).
+	I'm taking this brief time to study what I personally find interesting to prepare for my future after the course.
+	
+	[Edit 2024/05/01] 
+	Less than 24 hours after writing this post, I received an email saying that the Graduate Certificate program has been suspended for my intake.
+	To say that this news is devastating is an understatement. We will have to see how this situation plays out, but this may derail my long-term plans.
+ 
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
+
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
