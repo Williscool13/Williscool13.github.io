@@ -1,0 +1,154 @@
+<meta charset="utf-8" emacsmode="-*- markdown -*-">
+<meta name="description" content="Will's journal entry from February 2026, covering the early development of his new game engine — including audio, hot reloading, multithreading, render graphs, and mesh shader optimizations.">
+
+    **[Will's Journal](../index.html)**
+
+
+(#) **2026/02/21: My new engine is like my child**
+
+New year, new engine. Feels great to be able to get a booming start to the new engine, and things _are_ going well. So I spent the last few months of 2025 working briefly on a test bed to give me an introduction to many engine systems that I know would be foundational to the new engine. Among them are physics, multithreading, ECS, audio (SDL_Audio), and mesh shaders.
+
+Many of these systems are so deeply integrated into the engine that I can't imagine a time when I didn't both understand and use these systems extensively. There is really a lot to talk about, my thoughts are likely going to be scattered throughout this journal entry so I will try my best to keep the flow reasonably coherent.
+
+
+(##) Audio
+
+The engine is big. I recognize that it is a monumental task to create an engine for personal use that has all the bells and whistles I need. While in my test bed I had rolled the audio mixer myself, attached to SDL's audio entrypoints; I feel like this is one system I am willing to delegate to people smarter than me. So I made the decision early in the engine's development that I want to use SDL_Mixer to handle my audio mixing needs, and while I haven't extensively tested the audio, a basic audio implementation that plays looping audio/sfx is present. 
+
+I don't think it's uncommon that audio is one of the more neglected aspects of game development. But if you think about it, humans experience sound much more closely than most other senses, and even adding basic sound effects and music goes a long way making a game feel more like a game. The previous engine had no audio implementation at all, and I want to make it a larger point to focus on game development aspects more holistically rather than just on the rendering side.
+
+(##) The Engine Itself
+
+For the new engine, I'm trying to make more of a point to separate systems more concretely. This helps for a more robust mental model and to support different configurations: debug, release, packaged, profiling. Most engine modules are in separate CMake modules, and even though most are still statically linked, I think it has produced tangible benefits when it comes to development.
+
+The game module in particular is not statically linked, at least for debug builds (well, it's a separate flag). This is because I want to support hotreloading, and for the most part the engine functions quite well with hotreloading in place. But I have a few gripes. 
+
+- Hot reloading feels a bit "fragile", which makes me use the feature less
+- I often just start my program attached with a debugger, and CLion locks the pdb so I can't rebuild. I already copy the .dll into a separate folder to be used, but the pdb doesn't quite work like that, so idk.
+- If I can't change function signatures or struct members then that takes out like 90% of my "productive" hot-reload use cases. I suppose when I start developing the game portion of the game, it may come more in handy, but thus far... very little gained
+
+That said, I will be keeping an open mind to this in hopes that it demonstrates its strengths more concretely when I start work on the game.
+
+<hr>
+
+As for the engine libraries, SDL(3) is still at the core of the engine, handling the windowing, inputs, and cross-platform requirements. DLL loading is platform specific and I've prepared some shared headers and .cpp files meant to be used for different platforms, but until the day I develop this for Linux instead of Windows; the engine will remain only viable for windows development. 
+
+Most previous libraries are largely still in:
+
+- glm
+- fmt
+- Jolt Physics
+- volk
+- vulkan bootstrap
+- libktx
+- imgui
+
+We also have a few new faces:
+
+- enkiTS
+- enTT
+- bc7enc_rdo
+- meshoptimizer
+- tracy
+
+Just to briefly touch on some of the new dependencies. enkiTS is the task scheduler for my engine's job system. I've already extended it to work with Jolt, so instead of using Jolt's "temporary" job system, I use this now! 
+
+enTT is what I use for ECS, and I think the API is extremely friendly; I look forward to really stretching its legs during full game development.
+
+bc7enc_rdo and meshoptimizer are both preprocessing steps for rendering resources. bc7enc is for gpu-compressed BCn textures and meshoptimizer is used to both optimize the meshes and generate meshlets. Lots to say about these, but I've already got so much to talk about here!
+
+<hr>
+
+Tracy is another big one. I've determined that this time, I want to take profiling much more seriously. I have used the AMD profiling tools a little bit before and know how to read the profiler outputs... somewhat. But I have completely neglected CPU profiling. I saw a conference talk - I think it was for CppCon - talking about Tracy and how powerful it is to generate the profiles I need.
+
+The talk was so right. Insanely powerful tool, looks terrific, superbly easy to set up. Just needed to add several tracy zones throughout my codebase and it just gives me the information I need, no fuss. I'm grateful that tools like this exist.
+
+And related to profiling, I was actually quite excited when one day I saw that descriptor buffer support was added to renderdoc. Unfortunately when I tried to read a renderdoc capture for my engine's early build that uses descriptor buffers, it just hung my computer :(. I sent what little breadcrumbs I had to RenderDoc to ask if they knew what was up. They said that it is likely a driver issue (AMD), and we need to wait for AMD to properly support descriptor buffers to be debugged... :(. I appreciate the time they took to respond to me though.
+
+
+(##) Descriptor Heap
+
+Descriptor heap is the new kid on the block. It promises to remove all the useless descriptor abstractions and just "get to the metal". From my cursory glance at descriptor heaps, it does sort of seem that it is used in almost exactly the way I use descriptor buffers. I am extremely inclined to make a quick change to my engine. Mostly because I know that this is a big deal; GPU vendors are much more likely to support this than dear old descriptor buffers (especially when descriptor heaps are declared to be a supersession of descriptor buffers). 
+
+My biggest concern is actually support on not-that-old GPUs. As far as I know, AMD no longer intends on producing driver updates for RDNA 1 and 2. If this is the case, then will they ever see proper descriptor heap support? I was already taking a stance on the market saying that I wouldn't support any hardware that doesn't support Descriptor Buffer, but at least most "modern" GPUs supports it. Is it really worth it to swap to descriptor heap if an even larger portion of the market won't support it? 
+
+I intend on giving it a few months to settle in and see what the level of support is like for it. But I am optimistic.
+
+
+(##) Back to the engine
+
+Another focus of this engine is on multithreading. As you may have surmised from the earlier mention of dependencies, multithreading will actually play a major role in the new engine. I plan on tackling it from a few angles:
+
+- Jobs for parallelizable tasks
+- ECS to take advantage of parallelization
+- Dedicated render thread
+- Asset load job threads to load multiple assets dynamically as needed
+
+So far things have been fairly straightforward, I haven't faced any arcane multithreading artifacts that may cause someone to tear their own hair out. The dedicated render thread in particular I'm quite proud of, and once implemented (and used), makes me question how I could ever have developed my engine without it. 
+
+A dedicated render thread means, I make the game run unbounded - at its own pace. Then when the render thread indicates that N-FIF is ready for frame-buffer write, the game writes anything it needs, and the render just consumes whatever is in the frame buffer. My architecture has never been cleaner. 
+
+I have also approached the renderthread a bit differently from previous iterations. Instead of hand-writing barriers and resource creation/management, I wanted to take on the challenge of making a render graph. Inspired by Unreal Engine, I looked it up and saw that there is an engine called Granite that does some render graph shenanigans that is much more approachable than Unreal Engine.
+
+I tried my hardest to make a render graph going. What was produced is a fairly simple resource aliasing, automatic buffer insertion; render graph. It is a bit basic in that it's missing key features like pass pruning, buffer clear batching, barrier combining, barrier read/write accumulation, and async compute passes..... among other things. Spelling it out plainly, it does feel like it has a long way to go, but as it is, it isn't a meaningful bottleneck in my rendering, and is completely correct! This is good enough for me for now. It enables me to add features so seamlessly, I am extremely proud of what I have achieved with this render graph.
+
+And as a final bonus for my renderer, pipeline loading is asynchronous and uses vkPipelineCache. >:)
+
+
+(##) Mesh Shaders
+
+I've also been exploring the use of mesh shaders extensively. My engine uses mesh shaders exclusively, with a preprocessing step that saves the model blob and meshlet data in a `.willmodel` file. And it isn't excessive to say that it would not be possible without meshoptimizer. Perhaps one of the greatest graphics programming practical use library of our time. 
+
+The rendering pipeline itself has gone through many iterations:
+
+1. Render meshlets using a task and mesh shader. No culling in the task shader.
+2. Use draw indirect to render meshlets using a task and mesh shader. Still no culling in the task shader.
+3. Cull instances before draw indirect and cull meshlets in the task shader (with the use of groupshared).
+
+(Cry about how I can't even draw 100k boxes w/ 4x shadow cascades)
+
+4. Remove task shaders entirely and use mesh shaders exclusively. Culling happens in 2 separate compute passes.
+
+That last point is a much greater task than it might appear at first glance. To do so requires 2 intentional prefix sums, which itself was not trivial to get going on the GPU. It required extensive use of groupshared, wave-groups and intrinsic PrefixSum functions. At the moment, I do 2 prefix sum passes of 256,1,1; which means that I can support up to 256x256x256 items at one time. In practice, this means I can support drawing 16m instances and 16m meshlets in any given pass. While I believe in really stress testing the limit of the engine, 16m is plenty. 
+
+The first prefix sum is to take all visible instances, and prefix sum the number of meshlets each has, based on the LOD chosen. The second prefix sum is to take all visible meshlets, gather all draw data that is needed by the mesh shader, and compact them into 1 large meshlet buffer that contains all visible meshlets that can be drawn in one large indirect draw. That is a lot of passes. Worst case, I think thats like 13 passes for the entire instancing setup. But you know what? It's so fast, it doesn't even matter. I won't lie, I took some inspiration from [Baz's](https://www.youtube.com/@bazhenovc754) engine video about how he skipped task shaders.
+
+This brings me to my next point: Why did I remove task shaders? 
+
+So something I notice in my own profiles: In a test scenario of 10k cubes (so 10k meshlets), when all instances, all meshlets are visible; why is there an assload of VkCmdDispatch(0,1,1)? They have literally no reason for being there. Some rubberducking indicates that they are produced entirely as a byproduct of the task/mesh shader pipeline. But again I ask, why????
+
+Each of those 10k instance draws took 2ms(!!!!!!), and with shadow cascades (even when frustum aligned, they still basically capture all 10k boxes), that means my frame time is 10! Simply unacceptable. So I decided to give this mesh shader only a try. Sure enough, profiles no longer show a buttload of 0,1,1 dispatches, and my soul is at peace.  
+
+(##) Final Words
+
+I think that gives a good overview of things I've implemented in the engine so far. Of course, there are plenty of things, but many of them are just whatever.. I only want to mention the big ones here. A lot got done in the ~2.5 months of this engine's lifetime, it feels like I've been working on this thing for years. 
+
+Still a whole bunch of critical engine things missing
+
+- Some FName/StringID setup so that I don't have strings littered all throughout the codebase.
+- A resource database/registry to keep track of resources, and duplicates so that any given asset is loaded only once.
+- A scene representation to serialize the scene setup for quick loading and game setup.
+
+The memory management is also a bit lacking I think. I feel like I'm doing a lot of dynamic heap allocations all throughout, and I think I should be quick to address this sooner rather than later.
+
+I'm getting a lot of good ideas and knowledge from the Game Engine Architecture book, and look forward to reading through the rest of it. I'm feeling really good about things, and hope that I can finish a game this year. I don't think it's particularly likely, but hey it's been 2 months and I've already done so much - I think targetting a game within the year is feasible.
+
+Thank you for reading :)
+
+As usual you can contact me through email (twtw40@gmail.com) or discord (williscool) but please contact me first through email if you can.
+
+And my music suggestions for this entry (Sorry no links today!):
+
+Forever Howlong - Black Country, New Road
+
+Prelude To Ecstasy - The Last Dinner Party
+
+From The Pyre - The Last Dinner Party
+
+This Side of the Island - Hamilton Leithauser
+
+Tallulah's Tape - Good Flying Birds
+
+Phonetics On and On - Horsegirl
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
