@@ -1,0 +1,162 @@
+<meta charset="utf-8" emacsmode="-*- markdown -*-">
+<meta name="description" content="Will's journal entry from April 2026, covering Visibility Buffer rendering, TAA, SMAA, and MSAA implementations in his game engine.">
+
+    **[Will's Journal](../index.html)**
+
+(#) **2026/04/28: Visibility Buffer, TAA, SMAA, and MSAA (among other things)**
+
+
+Once more I write about how the game engine has been going. Things are going fairly well, and I think I got a lot done in the 2 months since the last journal entry.
+To be frank I can feel the velocity slowing down a bit. As the basic features become developed, the "easy wins" are becoming fewer and farther.
+More complex topics demand more attention and time, and I find myself strained between work, the engine, and the time I have so generously given to friends and family.
+Though from what I hear this only gets worse with age.
+
+(##) What Has Actually Happened With the Engine
+
+With that out of the way, let's talk about the engine for real. I actually wrote my last journal entry from out of town.
+I took a bit of leave to go visit Grandma (routine), and while I was there I read through a solid portion of the Game Engine Architecture book.
+Bit sad that my copy has its spine broken a bit; the glue seems to have lost most of its adhesive properties.
+
+Anyway, my biggest takeaways were that I don't take memory seriously enough, and I should really hash my stuff.
+So the first thing I did when I got back to my computer was to create a new StringID type.
+A hash on strings that would reduce lookup times and generally improve the codebase.
+It just makes sense. Strings in general are difficult at best.
+They allocate on heap (if no SSO), comparisons require O(N) time complexity, require hashing every time I look it up as a map's key.
+Why would I use them?
+
+Speaking of heap, I also did a _major_ refactor on the memory management of my engine.
+It happened a little after this StringID, but in short I decided to make custom engine basic data structures so that I can really get hands-on with my engine's memory management.
+I have most common containers: arrays, maps, vectors, filesystem::path, strings; I distinguish between heap (tlsf), heap (arena), and inline (usually stack) data structures explicitly; and introduced the use of memory allocators.
+My first time! AI was a big help in moving things around. I sought to eradicate all (as many as feasible really) instances of std containers. Not really "necessary", I could have used PMR, but why pay for virtual overhead?
+I already know my memory patterns and making things explicit is always better.
+
+Any external library I use that exposes a custom allocator API I would assign one of my allocators. Of course there are certain subtle issues that arise from this.
+Mostly that some of them access the allocators asynchronously, so I needed to add mutexes to my allocators. I assume that all of my external allocator patterns are not "hot-path", so a mutex will do. But time will tell.
+On the upside, with explicit memory pools, I can have a solid overview of the entire engine's memory usage.
+Of course the biggest one is asset loading/generation; the scratch space needed to load any reasonably sized model is, surprisingly, a lot.
+
+![Memory stats panel showing pool usage across engine subsystems](images/2026-04-28/memory_stats.png)
+
+(##) Editor, Scene Management, and ECS
+
+About the engine again: I didn't want to take it too far. I know I needed the basics; scene management and an editor. None of this is particularly interesting.
+Even while doing it I felt like it was the most boring shit in the world. But unfortunately if I want to break out of the "hobby renderer" phase, it just needed to get done.
+
+Since I am a mild follower of the cult of performance, I decided for this engine to do ECS instead of gameobjects (with some exceptions).
+So it took me a bit of getting my head around it but my engine has ECS as a first class passenger! I use EnTT. I serialize the scene per-component into json (but as a proprietary engine type .wscene).
+Something I wanted to try out is to make all my engine specific assets proprietary, reserving a portion of the header to be written out in plaintext so I can write metadata without having to open up the engine. Just open it up in notepad and I have all the information I need from the header.
+So far I have wscene, wtexture, wsmesh, wprefab, and wenvmap. Plenty to go on. There is no wsampler because I just raw hash the sampler property struct to deduplicate use between different models. Samplers are simple enough that I can do this.
+
+The editor itself uses things that most other engines use. Largely based on imgui and imguizmo. I think the basics are down. TRS multi-manipulation, name components, entity folders (for editor use only).
+I've even got click to select. I give all my entities their own unique "stable ID" and write it to a render target that I copy-back to read on the CPU. This does mean I have a delay of 3 frames (triple buffered, 3 frames in flight), but in my experience so far it has not been a problem.
+Rendering and physics components are well designed, where they can be added in any order and no issue _should_ arise. Of course this is subject to real testing, but so far it hasn't been a problem.
+Speaking of components, because ECS really makes data layout super clear, it has actually made all kinds of uses of serialization really easy. I very easily added "temporary serialization", where I serialize the entire scene when I click "play" and deserialize when I stop.
+It is definitely not as natural as gameobjects, but shines in several other ways.
+
+![Editor view showing entity browser, TRS gizmos, and component inspector](images/2026-04-28/editor_overview.png)
+
+(##) Procedural Geometry
+
+Something that I was really keen on making is something akin to Unity's ProBuilder tools. I wanted to be able to rapidly iterate on a level from within the editor. Make stairs, ramps, doors; whatever I needed to get something off the ground.
+It doesn't have to look good, and at this point I'm not sure that I'm ever going to make something that looks good! Someday, perhaps.
+This took a minute, but it does mean I need to roll meshoptimizer as a runtime dependency. Procedural geometry is its own component now! I can make any procedural geometry I want. It's great.
+I've even got physics colliders to work with these. Where you can specify whether you want basic shapes, convex hull, or triangle mesh colliders.
+
+![Procedural geometry level with stairs, ramps, pipes, and other shapes](images/2026-04-28/procedural_geometry.png)
+
+(##) Debug Rendering
+
+More editor things! I have debug rendering down. All debug draws result in line segments to be drawn. This includes any spheres/boxes from the game, and any random shape that the Jolt debug renderer would throw at me.
+It actually doesn't look very good, but it gets the job done and is splendid for debugging!
+
+![Debug renderer showing Jolt wireframes, OBBs, and convex hulls overlaid on the scene](images/2026-04-28/debug_rendering.png)
+
+(##) Gameplay and the Vertical Slice
+
+Beyond the editor I am also preparing for an early vertical slice of the engine. I plan on making a quick level that has a start/finish. Complete with gameplay elements like sound, objectives, respawn points, and the like.
+The inspiration for this would be Ballance, a fairly old game I once played when I was (really) young. The game is fairly simple, and was pretty alright for 3D graphics back in the day.
+It's really mostly just to dogfood the engine. I'm making a game engine, that is meant to be used to make games here!
+
+So far I'm following the structure of Unreal Engine a bit, with the usual player character, controller; there will be a gamestate in the future as well. The ability to select the character/controller/state type would also likely be a good idea.
+But these are big plans! I don't want to get ahead of myself but I have plans for game 2 to be something like Dishonored, with a few differences. None of that "choices matter" (cause that would take too long). Lethality encouraged. But most importantly, seamless portals is something I want to do for game #2.
+There is already some work being done on it, but until I have a concrete implementation use-case for it, it will be reasonably in shambles.
+
+
+(##) Visibility Buffer Rendering
+
+But to the main topic of this article, the fun stuff!
+
+Visibility buffer rendering! Sounds super complex but is by-far one of the easiest rendering techniques I have had to implement recently.
+I am thankful that there is a brilliant post about this by [John Hable @ Filmic Worlds](http://filmicworlds.com/blog/visibility-buffer-rendering-with-material-graphs) that really made clear the many complexities of the system.
+I also frequently reference the very new presentation from the [Doom: The Dark Ages](https://static.graphicsprogrammingconference.com/public/2025/slides/visibility-buffer-and-deferred-rendering-in-doom/Lazarek-Hammer-visibility-buffer-and-deferred-rendering-in-doom-the-dark-ages.pdf) team about their implementation of visibility buffer. I have a long way to go before I can get anywhere near what they do.
+Fortunately, I already exclusively use mega-buffers and bindless descriptors. So actually, the hard part was already done! Create some new render targets, copy the barycentric/derivative code from the post - badabing badaboom - it just works!
+Well that's simplifying it a bit, but it was really a lot more painless than I thought it would be.
+
+Of course, I've committed the cardinal sin of graphics programming which is that I don't profile my engine to see if it has made any measurable difference. In truth, it very likely has had a _negative_ effect on my frame times. My triangles aren't tiny.
+I don't ever plan on doing tiny-tiny triangles for my games. There may actually be no true benefit from me doing this. Heck I might have been ok with just using forward rendering with some fancy light techniques like clustered.
+But I am here for SCIENCE!
+
+![Barycentric coordinate visualization from the visibility buffer](images/2026-04-28/visibility_buffer_bary.png)![Scene rendered through the visibility buffer pipeline](images/2026-04-28/visibility_buffer_scene.png)
+
+(##) Anti-aliasing: TAA, SMAA, and MSAA
+
+Finally is anti-aliasing. Temporal anti-aliasing has eluded me for quite a bit of time now. Even with a "perfect" blueprint (from [REDORAV](https://www.elopezr.com/temporal-aa-and-the-quest-for-the-holy-trail/)), I have had issues making it look good/correct.
+However, I think after my latest pass I can finally say I have implemented TAA correctly. It looks clean and correct. It is actually remarkably impressive.
+Smearing is completely eliminated, following all the techniques suggested by REDORAV, as far as I can tell anyway.
+
+I decided to also take this time to try out some other antialiasing solutions. One of which I have a lot to talk about. But first, SMAA.
+Subpixel Morphological Anti-Aliasing is a relatively old antialiasing technique that doesn't use any temporal tricks. Which is the whole reason I wanted to use it.
+I wanted an antialiasing technique that did not rely on temporal effects. SMAA looks... alright? I just copied the [iryoku GitHub implementation](https://github.com/iryoku/smaa). It just had everything solved already, so I figured why not?
+Not to say it looks bad, but at "high" (0.1 threshold) it barely does any antialiasing. At "Ultra" (0.05 threshold) it looks a lot better, but apparently is super expensive? But even then I have to drop it down to 0.02 to see anything meaningful.
+It just doesn't hold a candle to TAA. But maybe that's unfair. TAA is effectively SSAA on a perfectly still image.
+
+![No AA](images/2026-04-28/aa_none.png)![SMAA Color (0.02 threshold)](images/2026-04-28/aa_smaa.png)![TAA](images/2026-04-28/aa_taa.png)![SMAA Color T2X (0.02 threshold)](images/2026-04-28/aa_smaa_t2x.png)
+
+Anyway, the final topic (and one I had wrestled with a lot over the past few days) is the idea of using MSAA in my renderer. As you may know, MSAA is mostly used for forward rendering.
+It provides a really crisp image with reasonable cost due to how it decides how many samples to shade. It is the golden boy of antialiasing, and if I could use it why wouldn't I?
+Well we can't use a multisampled GBuffer... It is just wayyyyy too expensive on bandwidth. Plus, if every single system needs to be MS aware, that's a lot of overhead/reworking of shaders.
+No, the bottom line is: a lot of effects today make use of the GBuffer and we need to output a single-sample GBuffer.
+
+This is actually why I wanted to use visibility buffer in the first place. Ages ago I recall reading an off-handed comment that said you can use MSAA with visibility buffer. I thought: "Wow! MSAA, we can finally reunite!".
+The more I looked into it the worse the situation seemed to be. Questions arose that could not be answered adequately. MSAA is just fundamentally incompatible with the rendering techniques of the modern age.
+
+- We don't want to multi-sample the GBuffer. How do we determine what sample (among the 4/8 we have) goes in the GBuffer?
+- "Deferred Resolve" pass - that is taking the GBuffer and doing lighting calculations to determine "output color" - just doesn't work. Since any pixel that has more than 1 triangle needs to resolve multiple samples into the output color.
+- MSAA approaches pure SSAA as triangle density increases. Worst case for an 8x MSAA is each sample is a different triangle, so 8 separate lighting calculations per pixel. Visibility buffer was designed to reduce quad overdraw, which happens when you have small triangles. MSAA and Visibility Buffer are just diametrically opposed! They are simply pulling in different directions and attempts to use them in tandem are fighting between them!
+
+In truth, graphics techniques serve the games they draw. The choice between MSAA and TAA comes down to things like the techniques you use, or the triangle density of your game.
+The search for a general purpose solution will just never compare to a well chosen and considered specific solution.
+
+It really put a damper on my mood when I realized this. Disappointing end to my antialiasing search. Perhaps one day we'll see more for this. Maybe it's already here with AI upscaling/frame gen.
+Maybe it won't matter at all once we stop doing rasterization and start exclusively using path-tracing?
+
+(##) About AI
+
+It would be deceptive of me to say that I don't use AI for my game engine development. But I want to emphasize that I do not and will not produce slop.
+Every feature I make is audited and designed specifically to my request. It is effectively like an automated typewriter; I only ask it to write what I know I would have written.
+That said, it does literally type things faster than I could type out myself. I don't consider myself a slow writer, but not being bogged down by syntax is a big improvement in ergonomics.
+
+(##) Closing
+
+This whole entry has been a bit of a rant about my engine, but there's so much to talk about! It seems like a lot, especially for 2 months. But in truth, I haven't been giving the engine as much time as I'd hoped.
+My weekends are booked for more hours than they have ever been before. I'm hanging out with other friends more often now, one that I enjoy playing games with quite a bit.
+
+But I am determined to take this engine all the way. It means a lot to me, and it is my intention of releasing something with it on steam! Maybe in 10 years :P
+
+Thank you for reading :)
+
+As usual you can contact me through email (twtw40@gmail.com) or discord (williscool) but please contact me first through email if you can.
+
+(##) Music Recommendations
+
+And my music suggestions for this entry
+
+[Some Like It Hot - Bar Italia](https://open.spotify.com/album/2CVovXC4S92eRgjtZazNEU?si=vqTKWkrrQqm31MHYWdIh4A)
+
+[On This Day - Tony Molina](https://open.spotify.com/album/0hOYEcoN7Su3cRi9ZbjV3C?si=puGgiVxQQjmaP0uOGYAobg)
+
+[Are We All Angels - Scowl](https://open.spotify.com/album/0zDdwRsOg2sVvOFpjEOtHs?si=Cjh218vtREeszaKfL1n5bg)
+
+[More - Pulp](https://open.spotify.com/album/4et2xBFMKmsaWQPjlKTbG6?si=cJkSOXZVTquR8upzzVzO0Q)
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="../markdeep.min.js" charset="utf-8"></script><script src="https://morgan3d.github.io/markdeep/latest/markdeep.min.js?" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
